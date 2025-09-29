@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { generateClient } from "aws-amplify/data";
 import { Amplify } from "aws-amplify";
 import outputs from "@/amplify_outputs.json";
@@ -28,9 +29,9 @@ export default function WeeklyChart({
   selectedDate,
   shouldAnimate = false 
 }: WeeklyChartProps) {
-  const [chartData, setChartData] = useState<ChartData[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [didInitialGrow, setDidInitialGrow] = useState(false);
+          const [chartData, setChartData] = useState<ChartData[]>([]);
+          const [isLoading, setIsLoading] = useState(true);
+          const [isFetching, setIsFetching] = useState(false);
 
   const CHART_HEIGHT = 180;
   const TOP_PADDING = 40;
@@ -44,15 +45,24 @@ export default function WeeklyChart({
 
   // Fetch historical data for the past 7 days
   const fetchHistoricalData = async () => {
+    if (isFetching) {
+      console.log('WeeklyChart: fetch already in progress, skipping');
+      return;
+    }
+    
+    console.log('WeeklyChart: fetchHistoricalData called');
+    setIsFetching(true);
     setIsLoading(true);
     try {
       const dates: string[] = [];
       for (let i = 6; i >= 0; i--) {
         dates.push(getDateInTimezone(i, userTimezone));
       }
+      console.log('WeeklyChart: fetching data for dates:', dates);
 
       // Fetch daily logs for all dates
       const { data: logs } = await client.models.DailyLog.list();
+      console.log('WeeklyChart: fetched logs:', logs);
       
       // Group logs by date and calculate scores
       const logsByDate: Record<string, number> = {};
@@ -61,6 +71,7 @@ export default function WeeklyChart({
           logsByDate[log.date] = (logsByDate[log.date] || 0) + (log.points || 0);
         }
       });
+      console.log('WeeklyChart: logsByDate:', logsByDate);
 
       // Create chart data
       const historicalData: ChartData[] = dates.slice(0, -1).map(date => ({
@@ -76,17 +87,14 @@ export default function WeeklyChart({
         label: 'Today'
       };
 
-      const combined = [...historicalData, todayData];
-      setChartData(combined);
-      
-      // Trigger animation after data is loaded
-      if (shouldAnimate && !didInitialGrow) {
-        setTimeout(() => setDidInitialGrow(true), 100);
-      }
+              const combined = [...historicalData, todayData];
+              console.log('WeeklyChart: final chart data:', combined);
+              setChartData(combined);
     } catch (error) {
       console.error('Failed to fetch historical data:', error);
     } finally {
       setIsLoading(false);
+      setIsFetching(false);
     }
   };
 
@@ -167,6 +175,8 @@ export default function WeeklyChart({
                 const height = maxScore > 0 ? Math.max((data.score / maxScore) * CHART_HEIGHT, 0) : 0;
                 const isToday = data.label === 'Today';
                 const isHighlighted = selectedDate ? (data.date === selectedDate) : isToday;
+                
+                console.log(`WeeklyChart: Bar ${index} - ${data.label} - score: ${data.score}, height: ${height}px, maxScore: ${maxScore}`);
                 const barClass = isHighlighted 
                   ? "w-full rounded-t bg-gradient-to-t from-amber-400 to-yellow-300"
                   : "w-full rounded-t bg-white shadow-lg";
@@ -174,29 +184,31 @@ export default function WeeklyChart({
                 return (
                   <div key={data.date} className="relative h-full flex-1 flex flex-col justify-end items-center overflow-visible">
                     {/* Points label above bar top */}
-                    <div 
+                    <motion.div 
                       className={`absolute z-20 text-[11px] font-bold pointer-events-none ${isHighlighted ? 'text-amber-300' : 'text-white'}`}
                       style={{ 
                         bottom: Math.min(height + 12, CHART_HEIGHT + TOP_PADDING - 12),
-                        opacity: 1,
-                        transitionProperty: didInitialGrow ? 'none' : 'all',
-                        transitionDuration: didInitialGrow ? '0s' : '0.6s',
-                        transitionTimingFunction: didInitialGrow ? 'ease' : 'ease-in-out',
-                        transitionDelay: didInitialGrow ? '0s' : `${index * 0.06}s`
+                      }}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ 
+                        duration: 0.6,
+                        delay: index * 0.06,
+                        ease: "easeInOut"
                       }}
                     >
                       {data.score}
-                    </div>
+                    </motion.div>
                     
                     {/* Bar */}
-                    <div
+                    <motion.div
                       className={barClass}
-                      style={{ 
-                        height: didInitialGrow ? height : 0,
-                        transitionProperty: didInitialGrow ? 'none' : 'height',
-                        transitionDuration: didInitialGrow ? '0s' : '0.6s',
-                        transitionTimingFunction: didInitialGrow ? 'ease' : 'ease-in-out',
-                        transitionDelay: didInitialGrow ? '0s' : `${index * 0.06}s`
+                      initial={{ height: 0 }}
+                      animate={{ height: height }}
+                      transition={{ 
+                        duration: 0.6,
+                        delay: index * 0.06,
+                        ease: "easeInOut"
                       }}
                     />
                   </div>

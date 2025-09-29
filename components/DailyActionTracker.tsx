@@ -242,6 +242,13 @@ export default function DailyActionTracker({
     });
   };
 
+  const handleDeleteAction = (actionId: string) => {
+    // Trigger parent refresh to reload actions
+    onDataUpdate();
+    // Close the edit modal
+    setEditingAction(null);
+  };
+
   // Load existing daily logs from backend for a specific date
   const loadDailyLogs = async (date?: string) => {
     if (!user) return;
@@ -328,6 +335,9 @@ export default function DailyActionTracker({
     };
   };
 
+  // Debug logging
+  console.log('DailyActionTracker render - actions.length:', actions.length, 'showAddModal:', showAddModal);
+
   // Show empty state if no actions
   if (actions.length === 0) {
     return (
@@ -365,7 +375,10 @@ export default function DailyActionTracker({
               Create your first action to start tracking your habits!
             </p>
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={() => {
+                console.log('Create Your First Action button clicked');
+                setShowAddModal(true);
+              }}
               className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white dark:text-gray-100 dark:bg-indigo-700 dark:hover:bg-indigo-600 font-medium rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -683,10 +696,6 @@ export default function DailyActionTracker({
       {showAddModal && (
         <AddActionModal
           onClose={() => setShowAddModal(false)}
-          onAdd={(actionData) => {
-            onCreateAction(actionData);
-            setShowAddModal(false);
-          }}
         />
       )}
 
@@ -712,6 +721,7 @@ export default function DailyActionTracker({
               return newSet;
             });
           }}
+          onDelete={handleDeleteAction}
           editingAction={editingAction}
         />
       )}

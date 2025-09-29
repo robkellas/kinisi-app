@@ -12,6 +12,7 @@
     "@aws-amplify/ui-react": "^6.13.0",
     "@types/howler": "^2.2.12",
     "aws-amplify": "^6.6.6",
+    "framer-motion": "^12.23.22",
     "howler": "^2.2.4",
     "next": "^15.0.0",
     "react": "^18",
