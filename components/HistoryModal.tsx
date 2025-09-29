@@ -28,8 +28,8 @@ export default function HistoryModal({ action, onClose }: HistoryModalProps) {
       const dateString = date.toISOString().split('T')[0];
       
       // Mock data - in real implementation, this would come from your data source
-      const count = Math.floor(Math.random() * (action.targetCount + 1));
-      const isCompleted = count >= action.targetCount;
+      const count = Math.floor(Math.random() * ((action.targetCount || 1) + 1));
+      const isCompleted = count >= (action.targetCount || 1);
       
       // Check if this is the first day of a new month
       const isFirstDayOfMonth = date.getDate() === 1;
@@ -45,7 +45,7 @@ export default function HistoryModal({ action, onClose }: HistoryModalProps) {
           month: 'short'
         }).toUpperCase() : null,
         isPartial: count > 0 && !isCompleted,
-        completionPercentage: action.targetCount > 0 ? Math.min(100, (count / action.targetCount) * 100) : 0,
+        completionPercentage: (action.targetCount || 0) > 0 ? Math.min(100, (count / (action.targetCount || 1)) * 100) : 0,
         dayOfWeek: date.getDay() // 0 = Sunday, 1 = Monday, etc.
       });
     }

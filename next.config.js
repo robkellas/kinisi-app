@@ -1,8 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    esmExternals: 'loose'
-  }
+  // Removed experimental.esmExternals as it's not recommended
 }
 
 module.exports = nextConfig

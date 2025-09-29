@@ -10,7 +10,7 @@ type Action = Schema["Action"]["type"];
 
 interface AddActionModalProps {
   onClose: () => void;
-  onAdd: (action: Omit<Action, 'id' | 'completed' | 'completedAt' | 'createdAt'>) => void;
+  onAdd: (actionData: any) => void; // Simplified to avoid type conflicts
   editingAction?: Action | null;
 }
 
@@ -50,7 +50,8 @@ export default function AddActionModal({ onClose, onAdd, editingAction }: AddAct
         });
         console.log('Action created successfully');
       }
-      onAdd(formData); // Pass the data back to parent for UI updates
+      // Trigger parent refresh since we've already saved to backend
+      onAdd(formData);
       onClose();
     } catch (error) {
       console.error('Failed to save action:', error);

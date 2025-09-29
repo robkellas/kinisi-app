@@ -7,6 +7,7 @@ import outputs from "@/amplify_outputs.json";
 import type { Schema } from "@/amplify/data/resource";
 import AddActionModal from './AddActionModal';
 import HistoryModal from './HistoryModal';
+import FlippableScoreChart from './FlippableScoreChart';
 import { useSound } from './SoundContext';
 // Simple icons using SVG
 
@@ -111,25 +112,25 @@ export default function DailyActionTracker({
       let updatedLog: DailyLog;
       if (existingLog) {
         // Update existing log
-        const result = await client.models.DailyLog.update({
-          id: existingLog.id,
-          count: newCount,
-          points: action.progressPoints * newCount,
-        });
-        updatedLog = { ...existingLog, count: newCount, points: action.progressPoints * newCount };
+                const result = await client.models.DailyLog.update({
+                  id: existingLog.id,
+                  count: newCount,
+                  points: (action.progressPoints || 0) * newCount,
+                });
+                updatedLog = { ...existingLog, count: newCount, points: (action.progressPoints || 0) * newCount };
       } else {
         // Create new log
         const result = await client.models.DailyLog.create({
           actionId: actionId,
           count: newCount,
-          points: action.progressPoints * newCount,
+          points: (action.progressPoints || 0) * newCount,
           date: currentDate,
         });
         updatedLog = { 
           id: result.data?.id || '', 
           actionId, 
           count: newCount, 
-          points: action.progressPoints * newCount, 
+          points: (action.progressPoints || 0) * newCount, 
           date: currentDate 
         };
       }
@@ -172,13 +173,13 @@ export default function DailyActionTracker({
       
       console.log('Action count updated successfully');
       
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to update action count:', error);
       console.error('Error details:', {
         actionId,
         increment,
-        error: error.message,
-        stack: error.stack
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
       });
     } finally {
       setUpdatingActions(prev => {
@@ -292,6 +293,41 @@ export default function DailyActionTracker({
     }
   }, [selectedDate, user]);
 
+  // Calculate score summary
+  const calculateScoreSummary = () => {
+    const currentDate = selectedDate;
+    const logsForDate = logsCache[currentDate] || [];
+    const currentScore = logsForDate.reduce((sum, log) => sum + (log.points || 0), 0);
+    
+    // Calculate yesterday's score for comparison
+    const yesterday = new Date(currentDate);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayDate = yesterday.toISOString().split('T')[0];
+    const yesterdayLogs = logsCache[yesterdayDate] || [];
+    const yesterdayScore = yesterdayLogs.reduce((sum, log) => sum + (log.points || 0), 0);
+    
+    // Count completed actions for today
+    const encourageCompleted = actions.filter(action => {
+      const log = logsForDate.find(l => l.actionId === action.id);
+      return log && log.count >= (action.targetCount || 0);
+    }).length;
+    
+    const avoidCompleted = actions.filter(action => {
+      const log = logsForDate.find(l => l.actionId === action.id);
+      return log && log.count >= (action.targetCount || 0);
+    }).length;
+    
+    return {
+      currentScore,
+      difference: currentScore - yesterdayScore,
+      actionCounts: {
+        encourage: { completed: encourageCompleted },
+        avoid: { completed: avoidCompleted }
+      },
+      todayScore: currentScore
+    };
+  };
+
   // Show empty state if no actions
   if (actions.length === 0) {
     return (
@@ -368,6 +404,18 @@ export default function DailyActionTracker({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
         </button>
+      </div>
+
+      {/* Score Chart */}
+      <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+        <FlippableScoreChart
+          scoreSummary={calculateScoreSummary()}
+          userTimezone="America/Los_Angeles"
+          selectedDate={selectedDate}
+          refreshTrigger={0}
+          previousScore={null}
+          animationTrigger={0}
+        />
       </div>
 
       {/* Actions List */}
@@ -480,7 +528,7 @@ export default function DailyActionTracker({
                               <div
                                 className="absolute inset-0 rounded-full"
                                 style={{
-                                  background: `conic-gradient(from 0deg, #fbbf24 ${(count / action.targetCount) * 360}deg, transparent ${(count / action.targetCount) * 360}deg)`,
+                                  background: `conic-gradient(from 0deg, #fbbf24 ${(count / (action.targetCount || 1)) * 360}deg, transparent ${(count / (action.targetCount || 1)) * 360}deg)`,
                                   mask: 'radial-gradient(circle at center, transparent 0px, transparent 20px, black 21px)',
                                   WebkitMask: 'radial-gradient(circle at center, transparent 0px, transparent 20px, black 21px)'
                                 }}
