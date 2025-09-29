@@ -7,11 +7,51 @@ specifies that any user authenticated via an API key can "create", "read",
 "update", and "delete" any "Todo" records.
 =========================================================================*/
 const schema = a.schema({
-  Todo: a
+  Action: a
     .model({
-      content: a.string(),
+      // Basic action info
+      name: a.string().required(),
+      description: a.string(),
+      
+      // Action type (encourage/avoid)
+      type: a.enum(['ENCOURAGE', 'AVOID']),
+      
+      // Progress tracking
+      progressPoints: a.integer(),
+      targetCount: a.integer(),
+      frequency: a.enum(['DAILY', 'WEEKLY', 'MONTHLY']),
+      
+      // Completion tracking
+      completed: a.boolean(),
+      completedAt: a.datetime(),
+      
+      // Time of day preference
+      timeOfDay: a.enum(['ANYTIME', 'MORNING', 'AFTERNOON', 'EVENING']),
+      
+      // Ordering and organization
+      orderIndex: a.integer().default(0),
+      
+      // Timestamps
+      createdAt: a.datetime(),
     })
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [allow.owner()]),
+
+  DailyLog: a
+    .model({
+      // Reference to the action
+      actionId: a.string().required(),
+      
+      // Daily progress tracking
+      count: a.integer().required(),
+      points: a.integer().required(),
+      
+      // Date for this log entry
+      date: a.string().required(), // YYYY-MM-DD format
+      
+      // Timestamps
+      createdAt: a.datetime(),
+    })
+    .authorization((allow) => [allow.owner()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;
@@ -19,10 +59,7 @@ export type Schema = ClientSchema<typeof schema>;
 export const data = defineData({
   schema,
   authorizationModes: {
-    defaultAuthorizationMode: "apiKey",
-    apiKeyAuthorizationMode: {
-      expiresInDays: 30,
-    },
+    defaultAuthorizationMode: "userPool",
   },
 });
 

@@ -3,54 +3,68 @@
 import { useState, useEffect } from "react";
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "@/amplify/data/resource";
-import "./../app/app.css";
 import { Amplify } from "aws-amplify";
 import outputs from "@/amplify_outputs.json";
 import "@aws-amplify/ui-react/styles.css";
 import { Authenticator } from "@aws-amplify/ui-react";
+import DailyActionTracker from "@/components/DailyActionTracker";
 
 Amplify.configure(outputs);
 
 const client = generateClient<Schema>();
 
-export default function App() {
-  const [todos, setTodos] = useState<Array<Schema["Todo"]["type"]>>([]);
+function ActionApp({ signOut, user }: { signOut: (() => void) | undefined; user: any }) {
+  const [actions, setActions] = useState<Array<Schema["Action"]["type"]>>([]);
 
-  function listTodos() {
-    client.models.Todo.observeQuery().subscribe({
-      next: (data) => setTodos([...data.items]),
+  function listActions() {
+    client.models.Action.observeQuery().subscribe({
+      next: (data) => setActions([...data.items]),
     });
   }
 
   useEffect(() => {
-    listTodos();
-  }, []);
+    // Only fetch actions when user is authenticated
+    if (user) {
+      listActions();
+    }
+  }, [user]);
 
-  function createTodo() {
-    client.models.Todo.create({
-      content: window.prompt("Todo content"),
-    });
+  function createAction(actionData: Omit<Schema["Action"]["type"], 'id' | 'completed' | 'completedAt' | 'createdAt'>) {
+    client.models.Action.create(actionData);
   }
 
   return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 shadow-sm">
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white">Kinisi</h1>
+        <button
+          onClick={() => signOut?.()}
+          className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+        >
+          Sign out
+        </button>
+      </div>
+      
+              <div className="p-4">
+                <DailyActionTracker
+                  actions={actions}
+                  onDataUpdate={() => {
+                    // Refresh actions data
+                    listActions();
+                  }}
+                  onCreateAction={createAction}
+                  user={user}
+                />
+              </div>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
     <Authenticator>
       {({ signOut, user }) => (
-        <main>
-          <h1>My todos</h1>
-          <button onClick={createTodo}>+ new</button>
-          <ul>
-            {todos.map((todo) => (
-              <li key={todo.id}>{todo.content}</li>
-            ))}
-          </ul>
-          <div>
-            🥳 App successfully hosted. Try creating a new todo.
-            <br />
-            <a href="https://docs.amplify.aws/nextjs/start/quickstart/nextjs-app-router-client-components/">
-              Review next steps of this tutorial.
-            </a>
-          </div>
-        </main>
+        <ActionApp signOut={signOut} user={user} />
       )}
     </Authenticator>
   );
