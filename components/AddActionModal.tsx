@@ -20,19 +20,21 @@ interface AddActionModalProps {
 }
 
 export default function AddActionModal({ onClose, onAdd, onDelete, editingAction }: AddActionModalProps) {
+  console.log('AddActionModal rendered:', { editingAction: !!editingAction, onClose: !!onClose });
   const client = generateClient<Schema>();
   const [formData, setFormData] = useState({
     name: editingAction?.name || '',
     description: editingAction?.description || '',
     type: editingAction?.type || 'ENCOURAGE' as 'ENCOURAGE' | 'AVOID',
     progressPoints: editingAction?.progressPoints || 1,
-    frequency: editingAction?.frequency || 'DAILY' as 'DAILY' | 'WEEKLY' | 'MONTHLY',
+            frequency: editingAction?.frequency || 'DAILY' as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'ONETIME',
     targetCount: editingAction?.targetCount || 1,
     timeOfDay: editingAction?.timeOfDay || 'ANYTIME' as 'ANYTIME' | 'MORNING' | 'AFTERNOON' | 'EVENING'
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showDescription, setShowDescription] = useState(!!editingAction?.description);
 
   const handleDelete = () => {
     if (!editingAction || !onDelete) return;
@@ -95,7 +97,7 @@ export default function AddActionModal({ onClose, onAdd, onDelete, editingAction
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" style={{ top: 0, left: 0, right: 0, bottom: 0 }}>
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-md w-full p-6">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
@@ -130,7 +132,7 @@ export default function AddActionModal({ onClose, onAdd, onDelete, editingAction
                     formData.type === value
                       ? value === 'ENCOURAGE'
                         ? 'bg-green-600 text-white'
-                        : 'bg-red-600 text-white'
+                        : 'bg-purple-600 text-white'
                       : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                   }`}
                 >
@@ -142,7 +144,11 @@ export default function AddActionModal({ onClose, onAdd, onDelete, editingAction
 
           {/* Action Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label className={`block text-sm font-medium mb-2 ${
+              formData.type === 'ENCOURAGE' 
+                ? 'text-green-700 dark:text-green-300' 
+                : 'text-purple-700 dark:text-purple-300'
+            }`}>
               {formData.type === 'ENCOURAGE' 
                 ? 'What do you want to encourage?' 
                 : 'What do you want to avoid?'
@@ -156,23 +162,41 @@ export default function AddActionModal({ onClose, onAdd, onDelete, editingAction
                 ? 'e.g., Drink 8 glasses of water'
                 : 'e.g., Eating junk food'
               }
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-800 dark:text-gray-100"
+              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-800 dark:text-gray-100 ${
+                formData.type === 'ENCOURAGE'
+                  ? 'border-green-300 dark:border-green-600 focus:ring-green-500 focus:border-green-500 bg-green-50 dark:bg-green-900/20'
+                  : 'border-purple-300 dark:border-purple-600 focus:ring-purple-500 focus:border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+              }`}
               required
             />
           </div>
 
           {/* Description */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Description (Optional)
-            </label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-              placeholder="Add more details about this action..."
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-800 dark:text-gray-100"
-            />
+            <button
+              type="button"
+              onClick={() => setShowDescription(!showDescription)}
+              className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 hover:text-gray-900 dark:hover:text-gray-100"
+            >
+              <span>Description (Optional)</span>
+              <svg 
+                className={`w-4 h-4 transition-transform ${showDescription ? 'rotate-180' : ''}`}
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {showDescription && (
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Add more details about this action..."
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-800 dark:text-gray-100"
+              />
+            )}
           </div>
 
           {/* Progress Points */}
@@ -203,16 +227,17 @@ export default function AddActionModal({ onClose, onAdd, onDelete, editingAction
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Frequency
             </label>
-            <div className="flex gap-2">
-              {[
-                { value: 'DAILY', label: 'Daily' },
-                { value: 'WEEKLY', label: 'Weekly' },
-                { value: 'MONTHLY', label: 'Monthly' }
-              ].map(({ value, label }) => (
+                    <div className="flex gap-2">
+                      {[
+                        { value: 'ONETIME', label: 'Once' },
+                        { value: 'DAILY', label: 'Daily' },
+                        { value: 'WEEKLY', label: 'Weekly' },
+                        { value: 'MONTHLY', label: 'Monthly' }
+                      ].map(({ value, label }) => (
                 <button
                   key={value}
                   type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, frequency: value as 'DAILY' | 'WEEKLY' | 'MONTHLY' }))}
+                  onClick={() => setFormData(prev => ({ ...prev, frequency: value as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'ONETIME' }))}
                   className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
                     formData.frequency === value
                       ? 'bg-indigo-600 text-white'

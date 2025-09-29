@@ -16,10 +16,10 @@ const schema = a.schema({
       // Action type (encourage/avoid)
       type: a.enum(['ENCOURAGE', 'AVOID']),
       
-      // Progress tracking
-      progressPoints: a.integer(),
-      targetCount: a.integer(),
-      frequency: a.enum(['DAILY', 'WEEKLY', 'MONTHLY']),
+              // Progress tracking
+              progressPoints: a.integer(),
+              targetCount: a.integer(),
+              frequency: a.enum(['DAILY', 'WEEKLY', 'MONTHLY', 'ONETIME']),
       
       // Completion tracking
       completed: a.boolean(),

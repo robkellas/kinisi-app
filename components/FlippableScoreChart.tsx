@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import WeeklyChart from './WeeklyChart';
+import { ANIMATION_CONFIG, ANIMATION_CLASSES } from '@/lib/animations';
 
 interface ScoreSummary {
   currentScore: number;
@@ -20,6 +21,7 @@ interface FlippableScoreChartProps {
   refreshTrigger?: number;
   previousScore?: number | null;
   animationTrigger?: number;
+  logsCache?: Record<string, any[]>;
 }
 
 export default function FlippableScoreChart({ 
@@ -28,7 +30,8 @@ export default function FlippableScoreChart({
   selectedDate,
   refreshTrigger = 0,
   previousScore,
-  animationTrigger = 0
+  animationTrigger = 0,
+  logsCache
 }: FlippableScoreChartProps) {
   const [isFlipped, setIsFlipped] = useState(false);
   const [animatedScore, setAnimatedScore] = useState(scoreSummary.currentScore);
@@ -45,7 +48,7 @@ export default function FlippableScoreChart({
         animationTrigger
       });
       
-      const duration = 800; // Animation duration in ms
+      const duration = ANIMATION_CONFIG.scoreChange.duration; // Animation duration in ms
       const startTime = Date.now();
       const startScore = previousScore || 0;
       const endScore = scoreSummary.currentScore;
@@ -95,18 +98,6 @@ export default function FlippableScoreChart({
 
   return (
     <div className="relative w-full">
-      {/* Flip indicator */}
-      <div className="absolute top-3 right-3 z-10">
-        <button
-          onClick={toggleFlip}
-          className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors"
-          title="Flip to see weekly comparison"
-        >
-          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-        </button>
-      </div>
 
       {/* 3D Flip Container */}
       <div 
@@ -117,7 +108,7 @@ export default function FlippableScoreChart({
         }}
       >
         <div
-          className="relative w-full h-full transition-transform duration-600 ease-in-out"
+          className={`relative w-full h-full ${ANIMATION_CLASSES.cardFlip}`}
           style={{ 
             transform: isFlipped ? 'rotateX(180deg)' : 'rotateX(0deg)',
             transformStyle: 'preserve-3d'
@@ -132,6 +123,18 @@ export default function FlippableScoreChart({
               transform: 'rotateX(0deg)'
             }}
           >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">Today's Score</h3>
+              <button
+                onClick={toggleFlip}
+                className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors"
+                title="Flip to see weekly comparison"
+              >
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            </div>
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
               {/* Kinisi Score - Left Side */}
               <div className="lg:col-span-1">
@@ -183,6 +186,7 @@ export default function FlippableScoreChart({
                   userTimezone={userTimezone} 
                   selectedDate={selectedDate}
                   shouldAnimate={didFrontChartGrow}
+                  logsCache={logsCache}
                 />
               </div>
             </div>

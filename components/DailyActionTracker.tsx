@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { generateClient } from "aws-amplify/data";
 import { Amplify } from "aws-amplify";
 import outputs from "@/amplify_outputs.json";
@@ -8,7 +8,9 @@ import type { Schema } from "@/amplify/data/resource";
 import AddActionModal from './AddActionModal';
 import HistoryModal from './HistoryModal';
 import FlippableScoreChart from './FlippableScoreChart';
+import ClearDataModal from './ClearDataModal';
 import { useSound } from './SoundContext';
+import { ANIMATION_CLASSES } from '@/lib/animations';
 // Simple icons using SVG
 
 Amplify.configure(outputs);
@@ -37,6 +39,19 @@ export default function DailyActionTracker({
   onCreateAction,
   user
 }: DailyActionTrackerProps) {
+  // Don't render anything if user is not authenticated
+  if (!user) {
+    return (
+      <div className="space-y-6">
+        <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+          <div className="text-center py-12 bg-gray-50 dark:bg-gray-700 rounded-lg">
+            <p className="text-gray-500 dark:text-gray-300">Loading...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const { playCompletionSound, playPreCompletionSound, playDecrementSound } = useSound();
   const [logsCache, setLogsCache] = useState<Record<string, DailyLog[]>>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -51,6 +66,8 @@ export default function DailyActionTracker({
   const [flippedCards, setFlippedCards] = useState<Set<string>>(new Set());
   const [editingAction, setEditingAction] = useState<Action | null>(null);
   const [historyAction, setHistoryAction] = useState<Action | null>(null);
+  const [showClearDataModal, setShowClearDataModal] = useState(false);
+  const [hasLoadedWeeklyData, setHasLoadedWeeklyData] = useState(false);
 
   // Get current date based on days back
   const getCurrentDate = () => {
@@ -95,7 +112,9 @@ export default function DailyActionTracker({
     setUpdatingActions(prev => new Set(prev).add(actionId));
     
     try {
+      // Always use selectedDate for consistency
       const currentDate = selectedDate;
+      console.log('Using selectedDate for update:', currentDate);
       const currentLogs = logsCache[currentDate] || [];
       const existingLog = currentLogs.find(l => l.actionId === actionId);
       
@@ -108,34 +127,17 @@ export default function DailyActionTracker({
       
       console.log('Updating action count:', { actionId, currentDate, newCount, increment });
       
-      // Save to backend
-      let updatedLog: DailyLog;
-      if (existingLog) {
-        // Update existing log
-                const result = await client.models.DailyLog.update({
-                  id: existingLog.id,
-                  count: newCount,
-                  points: (action.progressPoints || 0) * newCount,
-                });
-                updatedLog = { ...existingLog, count: newCount, points: (action.progressPoints || 0) * newCount };
-      } else {
-        // Create new log
-        const result = await client.models.DailyLog.create({
-          actionId: actionId,
-          count: newCount,
-          points: (action.progressPoints || 0) * newCount,
-          date: currentDate,
-        });
-        updatedLog = { 
-          id: result.data?.id || '', 
-          actionId, 
-          count: newCount, 
-          points: (action.progressPoints || 0) * newCount, 
-          date: currentDate 
-        };
-      }
+      // Update local cache immediately for instant UI response
+      const updatedLog: DailyLog = existingLog 
+        ? { ...existingLog, count: newCount, points: (action.progressPoints || 0) * newCount }
+        : { 
+            id: `temp-${Date.now()}`, // Temporary ID for optimistic update
+            actionId, 
+            count: newCount, 
+            points: (action.progressPoints || 0) * newCount, 
+            date: currentDate 
+          };
       
-      // Update the logs cache
       const updatedLogs = existingLog 
         ? currentLogs.map(l => l.actionId === actionId ? updatedLog : l)
         : [...currentLogs, updatedLog];
@@ -144,6 +146,39 @@ export default function DailyActionTracker({
         ...prev,
         [currentDate]: updatedLogs
       }));
+      
+      // Save to backend asynchronously (let AppSync handle sync)
+      try {
+        if (existingLog) {
+          // Update existing log
+          await client.models.DailyLog.update({
+            id: existingLog.id,
+            count: newCount,
+            points: (action.progressPoints || 0) * newCount,
+          });
+        } else {
+          // Create new log
+          const result = await client.models.DailyLog.create({
+            actionId: actionId,
+            count: newCount,
+            points: (action.progressPoints || 0) * newCount,
+            date: currentDate,
+          });
+          
+          // Update cache with real ID from backend
+          if (result.data?.id) {
+            setLogsCache(prev => ({
+              ...prev,
+              [currentDate]: updatedLogs.map(l => 
+                l.id === updatedLog.id ? { ...l, id: result.data!.id } : l
+              )
+            }));
+          }
+        }
+      } catch (error) {
+        console.error('Failed to sync with backend:', error);
+        // Could implement retry logic here if needed
+      }
       
       // Handle completion animations and sounds
       if (increment && newCount >= (action.targetCount || 0)) {
@@ -193,13 +228,27 @@ export default function DailyActionTracker({
   // Navigation functions
   const goBackOneDay = () => {
     if (daysBack < 7) {
-      setDaysBack(prev => prev + 1);
+      const newDaysBack = daysBack + 1;
+      setDaysBack(newDaysBack);
+      // Immediately update selectedDate to prevent sync issues
+      const newDate = new Date();
+      newDate.setDate(newDate.getDate() - newDaysBack);
+      const dateString = newDate.toISOString().split('T')[0];
+      console.log('Going back one day:', { daysBack: newDaysBack, newDate: dateString });
+      setSelectedDate(dateString);
     }
   };
 
   const goForwardOneDay = () => {
     if (daysBack > 0) {
-      setDaysBack(prev => prev - 1);
+      const newDaysBack = daysBack - 1;
+      setDaysBack(newDaysBack);
+      // Immediately update selectedDate to prevent sync issues
+      const newDate = new Date();
+      newDate.setDate(newDate.getDate() - newDaysBack);
+      const dateString = newDate.toISOString().split('T')[0];
+      console.log('Going forward one day:', { daysBack: newDaysBack, newDate: dateString });
+      setSelectedDate(dateString);
     }
   };
 
@@ -249,17 +298,67 @@ export default function DailyActionTracker({
     setEditingAction(null);
   };
 
-  // Load existing daily logs from backend for a specific date
+  const handleDataCleared = () => {
+    // Clear local cache
+    setLogsCache({});
+    // Reset weekly data loading flag
+    setHasLoadedWeeklyData(false);
+    // Trigger parent refresh to reload actions
+    onDataUpdate();
+  };
+
+  // Load all weekly data at once and cache it (only once on mount)
+  const loadWeeklyData = async () => {
+    if (!user || hasLoadedWeeklyData) return;
+    
+    try {
+      console.log('Loading weekly data for past 7 days (first time)');
+      setHasLoadedWeeklyData(true);
+      
+      // Get the last 7 days
+      const dates: string[] = [];
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        dates.push(date.toISOString().split('T')[0]);
+      }
+      
+      // Fetch all daily logs for the past 7 days
+      const { data: logs } = await client.models.DailyLog.list();
+      
+      // Group logs by date
+      const logsByDate: Record<string, any[]> = {};
+      logs?.forEach(log => {
+        if (dates.includes(log.date)) {
+          if (!logsByDate[log.date]) {
+            logsByDate[log.date] = [];
+          }
+          logsByDate[log.date].push(log);
+        }
+      });
+      
+      console.log('Loaded weekly data:', logsByDate);
+      
+      // Update logs cache with all weekly data
+      setLogsCache(prev => ({
+        ...prev,
+        ...logsByDate
+      }));
+    } catch (error) {
+      console.error('Failed to load weekly data:', error);
+      setHasLoadedWeeklyData(false); // Reset flag on error
+    }
+  };
+
+  // Load existing daily logs from backend for a specific date (fallback)
   const loadDailyLogs = async (date?: string) => {
     if (!user) return;
     
     try {
       const targetDate = date || getCurrentDate();
-      console.log('Loading daily logs for date:', targetDate);
       
       // Check if we already have logs for this date in cache
       if (logsCache[targetDate]) {
-        console.log('Logs already cached for date:', targetDate);
         return;
       }
       
@@ -268,8 +367,6 @@ export default function DailyActionTracker({
           date: { eq: targetDate }
         }
       });
-      
-      console.log('Loaded daily logs:', logs);
       
       // Update logs cache
       setLogsCache(prev => ({
@@ -281,39 +378,46 @@ export default function DailyActionTracker({
     }
   };
 
-  // Load logs when component mounts or user changes
+  // Load weekly data when component mounts or user changes
   useEffect(() => {
     if (user) {
-      loadDailyLogs();
+      loadWeeklyData();
     }
   }, [user]);
 
-  // Update selected date when daysBack changes
-  useEffect(() => {
-    setSelectedDate(getCurrentDate());
-  }, [daysBack]);
+  // Note: selectedDate is now updated directly in navigation functions to prevent sync issues
 
-  // Load logs when selectedDate changes
-  useEffect(() => {
-    if (user && selectedDate) {
-      loadDailyLogs(selectedDate);
-    }
-  }, [selectedDate, user]);
-
-  // Calculate score summary
-  const calculateScoreSummary = () => {
+  // Calculate score summary with memoization
+  const scoreSummary = useMemo(() => {
+    // Always use today's date for the score calculation, not the selectedDate
+    const today = new Date().toISOString().split('T')[0];
     const currentDate = selectedDate;
-    const logsForDate = logsCache[currentDate] || [];
-    const currentScore = logsForDate.reduce((sum, log) => sum + (log.points || 0), 0);
     
-    // Calculate yesterday's score for comparison
-    const yesterday = new Date(currentDate);
+    console.log('Calculating score summary for date:', currentDate, 'but todayScore from:', today);
+    
+    // Get logs for the currently selected date (for action counts)
+    const logsForDate = logsCache[currentDate] || [];
+    
+    // Get logs for today (for todayScore)
+    const todayLogs = logsCache[today] || [];
+    const todayScore = todayLogs.reduce((sum, log) => sum + (log.points || 0), 0);
+    
+    // Get logs for yesterday (for comparison)
+    const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayDate = yesterday.toISOString().split('T')[0];
     const yesterdayLogs = logsCache[yesterdayDate] || [];
     const yesterdayScore = yesterdayLogs.reduce((sum, log) => sum + (log.points || 0), 0);
     
-    // Count completed actions for today
+    console.log('Score summary data:', { 
+      currentDate, 
+      today, 
+      todayScore, 
+      yesterdayScore,
+      logsCount: logsForDate.length 
+    });
+    
+    // Count completed actions for the currently selected date
     const encourageCompleted = actions.filter(action => {
       const log = logsForDate.find(l => l.actionId === action.id);
       return log && log.count >= (action.targetCount || 0);
@@ -325,75 +429,97 @@ export default function DailyActionTracker({
     }).length;
     
     return {
-      currentScore,
-      difference: currentScore - yesterdayScore,
+      currentScore: todayScore, // Always use today's score
+      difference: todayScore - yesterdayScore,
       actionCounts: {
         encourage: { completed: encourageCompleted },
         avoid: { completed: avoidCompleted }
       },
-      todayScore: currentScore
+      todayScore: todayScore
     };
-  };
+  }, [selectedDate, logsCache]);
 
-  // Debug logging
-  console.log('DailyActionTracker render - actions.length:', actions.length, 'showAddModal:', showAddModal);
+  // Debug logging removed to prevent excessive console output
 
   // Show empty state if no actions
   if (actions.length === 0) {
     return (
-      <div className="space-y-6">
-        {/* Date Navigation */}
-        <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
-          <button
-            onClick={goBackOneDay}
-            disabled={daysBack >= 7}
-            className="p-2 rounded-lg bg-gray-100 text-gray-600 dark:text-gray-100 dark:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-600"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {getDateLabel()}
-          </h2>
-          <button
-            onClick={goForwardOneDay}
-            disabled={daysBack <= 0}
-            className="p-2 rounded-lg bg-gray-100 text-gray-600 dark:text-gray-100 dark:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-600"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Empty State */}
-        <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
-          <div className="text-center py-12 bg-gray-50 dark:bg-gray-700 rounded-lg">
-            <p className="text-gray-500 dark:text-gray-300">No actions configured yet.</p>
-            <p className="text-sm text-gray-400 dark:text-gray-400 mt-2 mb-6">
-              Create your first action to start tracking your habits!
-            </p>
+      <>
+        <div className="space-y-6">
+          {/* Date Navigation */}
+          <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm w-40">
             <button
-              onClick={() => {
-                console.log('Create Your First Action button clicked');
-                setShowAddModal(true);
-              }}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white dark:text-gray-100 dark:bg-indigo-700 dark:hover:bg-indigo-600 font-medium rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer"
+              onClick={goBackOneDay}
+              disabled={daysBack >= 7}
+              className="p-2 rounded-lg bg-gray-100 text-gray-600 dark:text-gray-100 dark:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-600"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              Create Your First Action
+            </button>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              {getDateLabel()}
+            </h2>
+            <button
+              onClick={goForwardOneDay}
+              disabled={daysBack <= 0}
+              className="p-2 rounded-lg bg-gray-100 text-gray-600 dark:text-gray-100 dark:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-600"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
             </button>
           </div>
+
+          {/* Empty State */}
+          <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+            <div className="text-center py-12 bg-gray-50 dark:bg-gray-700 rounded-lg">
+              <p className="text-gray-500 dark:text-gray-300">No actions configured yet.</p>
+              <p className="text-sm text-gray-400 dark:text-gray-400 mt-2 mb-6">
+                Create your first action to start tracking your habits!
+              </p>
+              <button
+                onClick={() => {
+                  console.log('Create Your First Action button clicked');
+                  setShowAddModal(true);
+                }}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white dark:text-gray-100 dark:bg-indigo-700 dark:hover:bg-indigo-600 font-medium rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Create Your First Action
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+
+        {/* Add Action Modal */}
+        {showAddModal && (
+          <AddActionModal
+            onClose={() => setShowAddModal(false)}
+          />
+        )}
+      </>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <>
+      <div className="space-y-6">
+      {/* Score Chart */}
+      <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+        <FlippableScoreChart
+          scoreSummary={scoreSummary}
+          userTimezone="America/Los_Angeles"
+          selectedDate={selectedDate}
+          refreshTrigger={0}
+          previousScore={null}
+          animationTrigger={0}
+          logsCache={logsCache}
+        />
+      </div>
+
       {/* Date Navigation */}
       <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
         <button
@@ -405,9 +531,18 @@ export default function DailyActionTracker({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          {getDateLabel()}
-        </h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            {getDateLabel()}
+          </h2>
+          <button
+            onClick={() => setShowClearDataModal(true)}
+            className="px-3 py-1 text-xs font-medium text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 rounded-full transition-colors"
+            title="Clear all data"
+          >
+            Clear Data
+          </button>
+        </div>
         <button
           onClick={goForwardOneDay}
           disabled={daysBack <= 0}
@@ -417,18 +552,6 @@ export default function DailyActionTracker({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
         </button>
-      </div>
-
-      {/* Score Chart */}
-      <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
-        <FlippableScoreChart
-          scoreSummary={calculateScoreSummary()}
-          userTimezone="America/Los_Angeles"
-          selectedDate={selectedDate}
-          refreshTrigger={0}
-          previousScore={null}
-          animationTrigger={0}
-        />
       </div>
 
       {/* Actions List */}
@@ -466,7 +589,7 @@ export default function DailyActionTracker({
 
                 <div className="relative h-24 perspective-1000">
                   <div 
-                    className="relative w-full h-full transition-transform duration-500 ease-in-out"
+                    className={`relative w-full h-full ${ANIMATION_CLASSES.cardFlip}`}
                     style={{ 
                       transform: isFlipped ? 'rotateX(180deg)' : 'rotateX(0deg)',
                       transformStyle: 'preserve-3d'
@@ -487,15 +610,13 @@ export default function DailyActionTracker({
                     >
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
+                          {action.type === 'AVOID' && (
+                            <div className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300">
+                              avoid
+                            </div>
+                          )}
                           <div className="font-medium text-gray-900 dark:text-white">
                             {action.name}
-                          </div>
-                          <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            action.type === 'ENCOURAGE' 
-                              ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300'
-                              : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300'
-                          }`}>
-                            {action.type}
                           </div>
                         </div>
                         
@@ -687,10 +808,12 @@ export default function DailyActionTracker({
       {showConfetti && (
         <div className="fixed inset-0 pointer-events-none z-50">
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-6xl">🎉</div>
+            <div className="text-6xl"></div>
           </div>
         </div>
       )}
+
+      </div>
 
       {/* Add Action Modal */}
       {showAddModal && (
@@ -726,21 +849,30 @@ export default function DailyActionTracker({
         />
       )}
 
-      {/* History Modal */}
-      {historyAction && (
-        <HistoryModal
-          action={historyAction}
-          onClose={() => {
-            setHistoryAction(null);
-            // Ensure card is flipped back to front side
-            setFlippedCards(prev => {
-              const newSet = new Set(prev);
-              newSet.delete(historyAction.id);
-              return newSet;
-            });
-          }}
-        />
-      )}
-    </div>
-  );
-}
+        {/* History Modal */}
+        {historyAction && (
+          <HistoryModal
+            action={historyAction}
+            onClose={() => {
+              setHistoryAction(null);
+              // Ensure card is flipped back to front side
+              setFlippedCards(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(historyAction.id);
+                return newSet;
+              });
+            }}
+          />
+        )}
+
+        {/* Clear Data Modal */}
+        {showClearDataModal && (
+          <ClearDataModal
+            isOpen={showClearDataModal}
+            onClose={() => setShowClearDataModal(false)}
+            onDataCleared={handleDataCleared}
+          />
+        )}
+      </>
+    );
+  }

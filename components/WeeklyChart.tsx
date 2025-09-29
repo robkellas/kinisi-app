@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { generateClient } from "aws-amplify/data";
+import { ANIMATION_CONFIG } from '@/lib/animations';
 import { Amplify } from "aws-amplify";
 import outputs from "@/amplify_outputs.json";
 import type { Schema } from "@/amplify/data/resource";
@@ -15,6 +16,7 @@ interface WeeklyChartProps {
   userTimezone?: string;
   selectedDate?: string;
   shouldAnimate?: boolean;
+  logsCache?: Record<string, any[]>;
 }
 
 interface ChartData {
@@ -27,11 +29,10 @@ export default function WeeklyChart({
   todayScore, 
   userTimezone = 'America/Los_Angeles', 
   selectedDate,
-  shouldAnimate = false 
+  shouldAnimate = false,
+  logsCache
 }: WeeklyChartProps) {
-          const [chartData, setChartData] = useState<ChartData[]>([]);
           const [isLoading, setIsLoading] = useState(true);
-          const [isFetching, setIsFetching] = useState(false);
 
   const CHART_HEIGHT = 180;
   const TOP_PADDING = 40;
@@ -43,64 +44,39 @@ export default function WeeklyChart({
     return date.toISOString().split('T')[0];
   };
 
-  // Fetch historical data for the past 7 days
-  const fetchHistoricalData = async () => {
-    if (isFetching) {
-      console.log('WeeklyChart: fetch already in progress, skipping');
-      return;
+  // Memoize chart data calculation using cached data
+  const chartData = useMemo(() => {
+    // Always use the last 7 days from today, regardless of selectedDate
+    const dates: string[] = [];
+    for (let i = 6; i >= 0; i--) {
+      dates.push(getDateInTimezone(i, userTimezone));
     }
-    
-    console.log('WeeklyChart: fetchHistoricalData called');
-    setIsFetching(true);
-    setIsLoading(true);
-    try {
-      const dates: string[] = [];
-      for (let i = 6; i >= 0; i--) {
-        dates.push(getDateInTimezone(i, userTimezone));
-      }
-      console.log('WeeklyChart: fetching data for dates:', dates);
 
-      // Fetch daily logs for all dates
-      const { data: logs } = await client.models.DailyLog.list();
-      console.log('WeeklyChart: fetched logs:', logs);
+    // Use cached data if available, otherwise use empty data
+    const historicalData: ChartData[] = dates.slice(0, -1).map(date => {
+      const logsForDate = logsCache?.[date] || [];
+      const score = logsForDate.reduce((sum, log) => sum + (log.points || 0), 0);
       
-      // Group logs by date and calculate scores
-      const logsByDate: Record<string, number> = {};
-      logs?.forEach(log => {
-        if (dates.includes(log.date)) {
-          logsByDate[log.date] = (logsByDate[log.date] || 0) + (log.points || 0);
-        }
-      });
-      console.log('WeeklyChart: logsByDate:', logsByDate);
-
-      // Create chart data
-      const historicalData: ChartData[] = dates.slice(0, -1).map(date => ({
+      return {
         date,
-        score: logsByDate[date] || 0,
+        score,
         label: new Date(date).toLocaleDateString('en-US', { weekday: 'short' })
-      }));
-
-      // Add today's data
-      const todayData: ChartData = {
-        date: dates[dates.length - 1],
-        score: todayScore,
-        label: 'Today'
       };
+    });
 
-              const combined = [...historicalData, todayData];
-              console.log('WeeklyChart: final chart data:', combined);
-              setChartData(combined);
-    } catch (error) {
-      console.error('Failed to fetch historical data:', error);
-    } finally {
-      setIsLoading(false);
-      setIsFetching(false);
-    }
-  };
+    // Add today's data
+    const todayData: ChartData = {
+      date: dates[dates.length - 1],
+      score: todayScore,
+      label: 'Today'
+    };
+
+    return [...historicalData, todayData];
+  }, [userTimezone, todayScore, logsCache]);
 
   useEffect(() => {
-    fetchHistoricalData();
-  }, [userTimezone, todayScore]);
+    setIsLoading(false);
+  }, [chartData]);
 
   if (isLoading) {
     return (
@@ -176,7 +152,7 @@ export default function WeeklyChart({
                 const isToday = data.label === 'Today';
                 const isHighlighted = selectedDate ? (data.date === selectedDate) : isToday;
                 
-                console.log(`WeeklyChart: Bar ${index} - ${data.label} - score: ${data.score}, height: ${height}px, maxScore: ${maxScore}`);
+                // Bar rendered
                 const barClass = isHighlighted 
                   ? "w-full rounded-t bg-gradient-to-t from-amber-400 to-yellow-300"
                   : "w-full rounded-t bg-white shadow-lg";
@@ -192,9 +168,9 @@ export default function WeeklyChart({
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ 
-                        duration: 0.6,
-                        delay: index * 0.06,
-                        ease: "easeInOut"
+                        duration: ANIMATION_CONFIG.chartBars.duration / 1000, // Convert to seconds
+                        delay: (index * ANIMATION_CONFIG.chartBars.staggerDelay) / 1000, // Convert to seconds
+                        ease: ANIMATION_CONFIG.chartBars.easing
                       }}
                     >
                       {data.score}
@@ -206,9 +182,9 @@ export default function WeeklyChart({
                       initial={{ height: 0 }}
                       animate={{ height: height }}
                       transition={{ 
-                        duration: 0.6,
-                        delay: index * 0.06,
-                        ease: "easeInOut"
+                        duration: ANIMATION_CONFIG.chartBars.duration / 1000, // Convert to seconds
+                        delay: (index * ANIMATION_CONFIG.chartBars.staggerDelay) / 1000, // Convert to seconds
+                        ease: ANIMATION_CONFIG.chartBars.easing
                       }}
                     />
                   </div>
