@@ -1,9 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { generateClient } from "aws-amplify/data";
+import { Amplify } from "aws-amplify";
+import outputs from "@/amplify_outputs.json";
 import type { Schema } from "@/amplify/data/resource";
+import { getDateInTimezone } from '@/lib/dateUtils';
+import { useUserProfile } from './UserProfileContext';
+
+Amplify.configure(outputs);
+const client = generateClient<Schema>();
 
 type Action = Schema["Action"]["type"];
+type DailyLog = Schema["DailyLog"]["type"];
 
 interface HistoryModalProps {
   action: Action;
@@ -11,25 +20,111 @@ interface HistoryModalProps {
 }
 
 export default function HistoryModal({ action, onClose }: HistoryModalProps) {
-  const [currentMonth, setCurrentMonth] = useState(() => {
-    return new Date();
+  const { timezone } = useUserProfile();
+  const [currentPeriod, setCurrentPeriod] = useState(() => {
+    // Start with today for initial view
+    const today = getDateInTimezone(0, timezone);
+    return today;
   });
+  const [isMonthView, setIsMonthView] = useState(false);
+  const [logsData, setLogsData] = useState<Record<string, DailyLog[]>>({});
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Generate calendar data for the last 30 days
+  // Fetch real data for the current month
+  const fetchLogsData = async () => {
+    setIsLoading(true);
+    try {
+      // Generate date range based on view type
+      const dates: string[] = [];
+      
+      if (isMonthView) {
+        // Generate date range for the current month
+        const currentDate = new Date(currentPeriod + 'T00:00:00');
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth();
+        const lastDay = new Date(year, month + 1, 0);
+        const daysInMonth = lastDay.getDate();
+        
+        for (let day = 1; day <= daysInMonth; day++) {
+          const targetDate = new Date(year, month, day);
+          const dateString = targetDate.toISOString().split('T')[0];
+          dates.push(dateString);
+        }
+        console.log('Fetching data for month:', { currentPeriod, month: month + 1, year, dates: dates.slice(0, 5), timezone });
+      } else {
+        // Generate date range for 30 days from currentPeriod
+        for (let i = 29; i >= 0; i--) {
+          const currentDate = new Date(currentPeriod + 'T00:00:00');
+          const targetDate = new Date(currentDate);
+          targetDate.setDate(targetDate.getDate() - i);
+          const dateString = targetDate.toISOString().split('T')[0];
+          dates.push(dateString);
+        }
+        console.log('Fetching data for 30 days:', { currentPeriod, dates: dates.slice(0, 5), timezone });
+      }
+      
+      // Fetch all logs for this action in the date range
+      const { data: logs } = await client.models.DailyLog.list({
+        filter: {
+          actionId: { eq: action.id },
+          date: { between: [dates[0], dates[dates.length - 1]] }
+        }
+      });
+      
+      // Group logs by date
+      const logsByDate: Record<string, DailyLog[]> = {};
+      logs?.forEach(log => {
+        if (!logsByDate[log.date]) {
+          logsByDate[log.date] = [];
+        }
+        logsByDate[log.date].push(log);
+      });
+      
+      setLogsData(logsByDate);
+    } catch (error) {
+      console.error('Failed to fetch logs data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Update currentPeriod when timezone changes
+  useEffect(() => {
+    const today = getDateInTimezone(0, timezone);
+    setCurrentPeriod(today);
+  }, [timezone]);
+
+  // Fetch data when modal opens or period changes
+  useEffect(() => {
+    fetchLogsData();
+  }, [action.id, currentPeriod, timezone]);
+
+  // Generate calendar data for 30 days or full month
   const generateCalendarData = () => {
     const calendarData = [];
-    const currentDate = new Date(currentMonth);
     
-    // Get the last 30 days from the current date
     const actualDates = [];
-    for (let i = 29; i >= 0; i--) {
-      const date = new Date(currentDate);
-      date.setDate(date.getDate() - i);
-      const dateString = date.toISOString().split('T')[0];
+    
+    if (isMonthView) {
+      // Get all days in the current month
+      const currentDate = new Date(currentPeriod + 'T00:00:00');
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
       
-      // Mock data - in real implementation, this would come from your data source
-      const count = Math.floor(Math.random() * ((action.targetCount || 1) + 1));
-      const isCompleted = count >= (action.targetCount || 1);
+      // Get first and last day of the month
+      const firstDay = new Date(year, month, 1);
+      const lastDay = new Date(year, month + 1, 0);
+      const daysInMonth = lastDay.getDate();
+      
+      for (let day = 1; day <= daysInMonth; day++) {
+        const targetDate = new Date(year, month, day);
+        const dateString = targetDate.toISOString().split('T')[0];
+        const date = new Date(dateString + 'T00:00:00');
+      
+        // Get real data from logsData
+        const dayLogs = logsData[dateString] || [];
+        const count = dayLogs.reduce((sum, log) => sum + (log.count || 0), 0);
+        const isCompleted = count >= (action.targetCount || 1);
       
       // Check if this is the first day of a new month
       const isFirstDayOfMonth = date.getDate() === 1;
@@ -48,6 +143,40 @@ export default function HistoryModal({ action, onClose }: HistoryModalProps) {
         completionPercentage: (action.targetCount || 0) > 0 ? Math.min(100, (count / (action.targetCount || 1)) * 100) : 0,
         dayOfWeek: date.getDay() // 0 = Sunday, 1 = Monday, etc.
       });
+    }
+    } else {
+      // Get 30 days starting from currentPeriod
+      for (let i = 29; i >= 0; i--) {
+        // Calculate days back from currentPeriod
+        const currentDate = new Date(currentPeriod + 'T00:00:00');
+        const targetDate = new Date(currentDate);
+        targetDate.setDate(targetDate.getDate() - i);
+        const dateString = targetDate.toISOString().split('T')[0];
+        const date = new Date(dateString + 'T00:00:00');
+        
+        // Get real data from logsData
+        const dayLogs = logsData[dateString] || [];
+        const count = dayLogs.reduce((sum, log) => sum + (log.count || 0), 0);
+        const isCompleted = count >= (action.targetCount || 1);
+        
+        // Check if this is the first day of a new month
+        const isFirstDayOfMonth = date.getDate() === 1;
+        
+        actualDates.push({
+          date: date.getDate(),
+          dateString,
+          isCompleted,
+          count,
+          fullDate: date,
+          isNewMonth: isFirstDayOfMonth,
+          monthLabel: isFirstDayOfMonth ? date.toLocaleDateString('en-US', { 
+            month: 'short'
+          }).toUpperCase() : null,
+          isPartial: count > 0 && !isCompleted,
+          completionPercentage: (action.targetCount || 0) > 0 ? Math.min(100, (count / (action.targetCount || 1)) * 100) : 0,
+          dayOfWeek: date.getDay() // 0 = Sunday, 1 = Monday, etc.
+        });
+      }
     }
     
     // Now arrange them in a proper calendar grid
@@ -77,25 +206,36 @@ export default function HistoryModal({ action, onClose }: HistoryModalProps) {
     return calendarData;
   };
 
-  // Navigation functions for 30-day periods
+  // Navigation functions for month-based periods
   const goToPreviousPeriod = () => {
-    setCurrentMonth(prev => {
-      const newDate = new Date(prev);
-      newDate.setDate(newDate.getDate() - 30);
-      return newDate;
+    setIsMonthView(true);
+    setCurrentPeriod(prev => {
+      // Go back one month and set to first day of that month
+      const currentDate = new Date(prev + 'T00:00:00');
+      const newDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+      const newDateString = newDate.toISOString().split('T')[0];
+      console.log('Going to previous month:', { prev, newDateString });
+      return newDateString;
     });
   };
 
   const goToNextPeriod = () => {
-    setCurrentMonth(prev => {
-      const newDate = new Date(prev);
-      newDate.setDate(newDate.getDate() + 30);
-      return newDate;
+    setIsMonthView(true);
+    setCurrentPeriod(prev => {
+      // Go forward one month and set to first day of that month
+      const currentDate = new Date(prev + 'T00:00:00');
+      const newDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+      const newDateString = newDate.toISOString().split('T')[0];
+      console.log('Going to next month:', { prev, newDateString });
+      return newDateString;
     });
   };
 
   const goToCurrentPeriod = () => {
-    setCurrentMonth(new Date());
+    // Go to today using timezone-aware date and reset to 30-day view
+    const today = getDateInTimezone(0, timezone);
+    setCurrentPeriod(today);
+    setIsMonthView(false);
   };
 
   // Check if we can navigate to previous/next periods
@@ -104,11 +244,12 @@ export default function HistoryModal({ action, onClose }: HistoryModalProps) {
   };
 
   const canGoNext = () => {
-    const today = new Date();
-    const currentDate = new Date(currentMonth);
+    const today = getDateInTimezone(0, timezone);
+    const currentDate = new Date(currentPeriod + 'T00:00:00');
     const nextPeriod = new Date(currentDate);
     nextPeriod.setDate(nextPeriod.getDate() + 30);
-    return nextPeriod <= today;
+    const todayDate = new Date(today + 'T00:00:00');
+    return nextPeriod <= todayDate;
   };
 
   const calendarData = generateCalendarData();
@@ -129,6 +270,9 @@ export default function HistoryModal({ action, onClose }: HistoryModalProps) {
             </h3>
           </div>
           <div className="flex items-center gap-2">
+            {isLoading && (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+            )}
             <button
               onClick={onClose}
               className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
@@ -139,6 +283,7 @@ export default function HistoryModal({ action, onClose }: HistoryModalProps) {
             </button>
           </div>
         </div>
+
 
         <div className="mb-4">
           <p className="text-sm text-gray-500 dark:text-gray-100">
@@ -164,13 +309,9 @@ export default function HistoryModal({ action, onClose }: HistoryModalProps) {
             <span className="text-sm">Previous</span>
           </button>
 
-          <button
-            onClick={goToCurrentPeriod}
-            className="px-3 py-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
-            title="Go to current period"
-          >
-            {currentMonth.getFullYear()}
-          </button>
+          <div className="px-3 py-1 text-sm font-medium text-gray-600 dark:text-gray-400">
+            {new Date(currentPeriod + 'T00:00:00').getFullYear()}
+          </div>
 
           <button
             onClick={goToNextPeriod}

@@ -56,10 +56,10 @@ function ActionApp({ signOut, user }: { signOut: (() => void) | undefined; user:
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Full-width navigation */}
-      <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 shadow-sm w-full">
+      <div className="flex items-center justify-between px-4 py-2 bg-white dark:bg-gray-800 shadow-sm w-full">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">Kinisi</h1>
-          <KinisiLogo className="w-8 h-8 text-indigo-600 dark:text-indigo-400" />
+          <KinisiLogo className="w-8 h-8 text-amber-600 dark:text-amber-400" />
         </div>
         <NavigationDropdown onSignOut={signOut} />
       </div>

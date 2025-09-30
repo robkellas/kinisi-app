@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useMotionValue, useTransform, useSpring } from 'framer-motion';
 import { generateClient } from "aws-amplify/data";
 import { ANIMATION_CONFIG } from '@/lib/animations';
 import { useUserProfile } from './UserProfileContext';
+import { getDateInTimezone } from '@/lib/dateUtils';
 import { Amplify } from "aws-amplify";
 import outputs from "@/amplify_outputs.json";
 import type { Schema } from "@/amplify/data/resource";
@@ -18,6 +19,7 @@ interface WeeklyChartProps {
   selectedDate?: string;
   shouldAnimate?: boolean;
   logsCache?: Record<string, any[]>;
+  onDateSelect?: (date: string) => void;
 }
 
 interface ChartData {
@@ -26,12 +28,47 @@ interface ChartData {
   label: string;
 }
 
+// Component to animate number values with fade out/in
+function AnimatedNumber({ value, delay = 0 }: { value: number; delay?: number }) {
+  const motionValue = useMotionValue(0);
+  const springValue = useSpring(motionValue, { 
+    stiffness: 100, 
+    damping: 30
+  });
+  const display = useTransform(springValue, (latest) => Math.round(latest));
+
+  useEffect(() => {
+    // Start with opacity 0, then animate to value
+    motionValue.set(0);
+    const timeout = setTimeout(() => {
+      motionValue.set(value);
+    }, delay);
+    
+    return () => clearTimeout(timeout);
+  }, [motionValue, value, delay]);
+
+  return (
+    <motion.span
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ 
+        duration: ANIMATION_CONFIG.chartBars.duration / 1000,
+        delay: delay / 1000,
+        ease: ANIMATION_CONFIG.chartBars.easing
+      }}
+    >
+      {display}
+    </motion.span>
+  );
+}
+
 export default function WeeklyChart({ 
   todayScore, 
   userTimezone = 'America/Los_Angeles', 
   selectedDate,
   shouldAnimate = false,
-  logsCache
+  logsCache,
+  onDateSelect
 }: WeeklyChartProps) {
   const { timezone } = useUserProfile();
   const [isLoading, setIsLoading] = useState(true);
@@ -39,19 +76,14 @@ export default function WeeklyChart({
   const CHART_HEIGHT = 180;
   const TOP_PADDING = 40;
 
-  // Get date in timezone
-  const getDateInTimezone = (daysBack: number, timezoneStr: string) => {
-    const date = new Date();
-    date.setDate(date.getDate() - daysBack);
-    return date.toISOString().split('T')[0];
-  };
 
   // Memoize chart data calculation using cached data
   const chartData = useMemo(() => {
-    // Always use the last 7 days from today, regardless of selectedDate
+    // Always use the last 8 days from today (7 days + today) to compare with same day last week
     const dates: string[] = [];
-    for (let i = 6; i >= 0; i--) {
-      dates.push(getDateInTimezone(i, timezone));
+    for (let i = 7; i >= 0; i--) {
+      const date = getDateInTimezone(i, timezone);
+      dates.push(date);
     }
 
     // Use cached data if available, otherwise use empty data
@@ -62,7 +94,10 @@ export default function WeeklyChart({
       return {
         date,
         score,
-        label: new Date(date).toLocaleDateString('en-US', { weekday: 'short' })
+        label: new Date(date + 'T00:00:00').toLocaleDateString('en-US', { 
+          weekday: 'short',
+          timeZone: timezone
+        })
       };
     });
 
@@ -175,12 +210,15 @@ export default function WeeklyChart({
                         ease: ANIMATION_CONFIG.chartBars.easing
                       }}
                     >
-                      {data.score}
+                      <AnimatedNumber 
+                        value={data.score} 
+                        delay={index * ANIMATION_CONFIG.chartBars.staggerDelay}
+                      />
                     </motion.div>
                     
-                    {/* Bar */}
-                    <motion.div
-                      className={barClass}
+                    {/* Bar - now clickable */}
+                    <motion.button
+                      className={`${barClass} cursor-pointer hover:opacity-80 transition-opacity`}
                       initial={{ height: 0 }}
                       animate={{ height: height }}
                       transition={{ 
@@ -188,6 +226,7 @@ export default function WeeklyChart({
                         delay: (index * ANIMATION_CONFIG.chartBars.staggerDelay) / 1000, // Convert to seconds
                         ease: ANIMATION_CONFIG.chartBars.easing
                       }}
+                      onClick={() => onDateSelect?.(data.date)}
                     />
                   </div>
                 );
@@ -198,15 +237,32 @@ export default function WeeklyChart({
         
         {/* Day labels */}
         <div className="flex justify-between mt-2">
-          {chartData.map((data) => {
+          {chartData.map((data, index) => {
             const isToday = data.label === 'Today';
             const isHighlighted = selectedDate ? (data.date === selectedDate) : isToday;
             return (
-              <div key={data.date} className="flex-1 text-center">
-                <div className={`text-xs ${isHighlighted ? 'text-amber-300 font-medium' : 'text-white opacity-90'}`}>
+              <motion.div 
+                key={data.date} 
+                className="flex-1 text-center"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ 
+                  duration: ANIMATION_CONFIG.chartBars.duration / 1000,
+                  delay: index * (ANIMATION_CONFIG.chartBars.staggerDelay / 1000),
+                  ease: ANIMATION_CONFIG.chartBars.easing
+                }}
+              >
+                <button
+                  onClick={() => onDateSelect?.(data.date)}
+                  className={`text-xs cursor-pointer ${
+                    isHighlighted 
+                      ? 'text-amber-400 font-semibold' 
+                      : 'text-white opacity-90 hover:opacity-100'
+                  }`}
+                >
                   {data.label}
-                </div>
-              </div>
+                </button>
+              </motion.div>
             );
           })}
         </div>

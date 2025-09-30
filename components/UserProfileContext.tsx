@@ -2,8 +2,11 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { generateClient } from "aws-amplify/data";
+import { Amplify } from "aws-amplify";
+import outputs from "@/amplify_outputs.json";
 import type { Schema } from "@/amplify/data/resource";
 
+Amplify.configure(outputs);
 const client = generateClient<Schema>();
 
 interface UserProfileContextType {

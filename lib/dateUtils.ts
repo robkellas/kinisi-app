@@ -31,8 +31,8 @@ export function getDateInTimezone(dateOffset: number = 0, timezone: string = 'Am
   const date = new Date(dateString + 'T00:00:00');
   date.setDate(date.getDate() - dateOffset);
   
-  // Return in YYYY-MM-DD format
-  return date.toISOString().split('T')[0];
+  const result = date.toISOString().split('T')[0];
+  return result;
 }
 
 /**
@@ -41,7 +41,8 @@ export function getDateInTimezone(dateOffset: number = 0, timezone: string = 'Am
  * @returns Date string in YYYY-MM-DD format
  */
 export function getTodayInTimezone(timezone: string = 'America/Los_Angeles'): string {
-  return getDateInTimezone(0, timezone);
+  const result = getDateInTimezone(0, timezone);
+  return result;
 }
 
 /**

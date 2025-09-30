@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { motion } from 'framer-motion';
 import WeeklyChart from './WeeklyChart';
 import { ANIMATION_CONFIG, ANIMATION_CLASSES } from '@/lib/animations';
 
@@ -22,6 +23,7 @@ interface FlippableScoreChartProps {
   previousScore?: number | null;
   animationTrigger?: number;
   logsCache?: Record<string, any[]>;
+  onDateSelect?: (date: string) => void;
 }
 
 export default function FlippableScoreChart({ 
@@ -31,7 +33,8 @@ export default function FlippableScoreChart({
   refreshTrigger = 0,
   previousScore,
   animationTrigger = 0,
-  logsCache
+  logsCache,
+  onDateSelect
 }: FlippableScoreChartProps) {
   const [isFlipped, setIsFlipped] = useState(false);
   const [animatedScore, setAnimatedScore] = useState(scoreSummary.currentScore);
@@ -48,7 +51,7 @@ export default function FlippableScoreChart({
         animationTrigger
       });
       
-      const duration = ANIMATION_CONFIG.scoreChange.duration; // Animation duration in ms
+      const duration = ANIMATION_CONFIG.flippableScoreChart.duration; // Animation duration in ms
       const startTime = Date.now();
       const startScore = previousScore || 0;
       const endScore = scoreSummary.currentScore;
@@ -107,87 +110,160 @@ export default function FlippableScoreChart({
           transformStyle: 'preserve-3d'
         }}
       >
-        <div
-          className={`relative w-full h-full ${ANIMATION_CLASSES.cardFlip}`}
+        <motion.div
+          className="relative w-full h-full"
           style={{ 
-            transform: isFlipped ? 'rotateX(180deg)' : 'rotateX(0deg)',
             transformStyle: 'preserve-3d'
+          }}
+          animate={{ 
+            rotateX: isFlipped ? 180 : 0 
+          }}
+          transition={{ 
+            duration: 0.3,
+            ease: "easeInOut"
           }}
         >
           {/* Front Side - Score Card with Weekly Chart */}
           <div
             ref={frontRef}
-            className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-xl shadow-lg p-6 text-white"
+            className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-xl shadow-lg p-6 text-white relative"
             style={{ 
               backfaceVisibility: 'hidden',
               transform: 'rotateX(0deg)'
             }}
           >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Today's Score</h3>
+            {/* Mobile: Single column with icon in top-right */}
+            <div className="lg:hidden relative">
+              {/* Flip button positioned absolutely in top-right */}
               <button
                 onClick={toggleFlip}
-                className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors"
+                className="absolute top-0 right-0 p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors z-10"
                 title="Flip to see weekly comparison"
               >
                 <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
                 </svg>
               </button>
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-              {/* Kinisi Score - Left Side */}
-              <div className="lg:col-span-1">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="flex items-baseline gap-2 mt-2">
-                      <span 
-                        className="text-6xl font-bold transition-all duration-300"
-                        style={{
-                          transform: animatedScore !== scoreSummary.currentScore ? 'scale(1.1)' : 'scale(1)'
-                        }}
-                      >
-                        {animatedScore}
-                      </span>
-                      <div className="bg-opacity-20 rounded-lg p-1.5">
-                        <svg className="w-5 h-5 text-green-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                        </svg>
-                      </div>
-                    </div>
-                    {(() => {
-                      if (animatedDifference > 0) {
-                        return (
-                          <p className="text-yellow-300 text-shadow-md text-md font-semibold mt-1">
-                            +{Math.round(animatedDifference)} pts vs prior
-                          </p>
-                        );
-                      } else if (animatedDifference < 0) {
-                        return (
-                          <p className="text-pink-100 text-shadow-md text-md mt-1">
-                            {Math.round(animatedDifference)} pts vs prior
-                          </p>
-                        );
-                      } else {
-                        return <p className="text-indigo-200 text-shadow-md text-md mt-1">Same as prior</p>;
-                      }
-                    })()}
-                    <p className="text-indigo-200 text-md text-shadow-md mt-1">
-                      {((scoreSummary.actionCounts.encourage?.completed || 0) + (scoreSummary.actionCounts.avoid?.completed || 0))} actions
-                    </p>
+              
+              {/* Score display */}
+              <div className="flex flex-col justify-start mb-6">
+                <div className="flex items-baseline gap-2">
+                  <span 
+                    className="text-6xl font-bold"
+                    style={{
+                      transform: animatedScore !== scoreSummary.currentScore ? 'scale(1.1)' : 'scale(1)',
+                      transition: 'transform 300ms ease-out'
+                    }}
+                  >
+                    {animatedScore}
+                  </span>
+                  <div className="bg-opacity-20 rounded-lg p-1.5">
+                    <svg className="w-5 h-5 text-green-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
                   </div>
                 </div>
+                {(() => {
+                  if (animatedDifference > 0) {
+                    return (
+                      <p className="text-yellow-300 text-shadow-md text-md font-semibold mt-1">
+                        +{Math.round(animatedDifference)} pts vs prior
+                      </p>
+                    );
+                  } else if (animatedDifference < 0) {
+                    return (
+                      <p className="text-pink-100 text-shadow-md text-md mt-1">
+                        {Math.round(animatedDifference)} pts vs prior
+                      </p>
+                    );
+                  } else {
+                    return <p className="text-indigo-200 text-shadow-md text-md mt-1">Same as prior</p>;
+                  }
+                })()}
+                <p className="text-indigo-200 text-md text-shadow-md mt-1">
+                  {((scoreSummary.actionCounts.encourage?.completed || 0) + (scoreSummary.actionCounts.avoid?.completed || 0))} actions
+                </p>
+              </div>
+              
+              {/* Chart */}
+              <WeeklyChart 
+                todayScore={scoreSummary.todayScore} 
+                userTimezone={userTimezone} 
+                selectedDate={selectedDate}
+                shouldAnimate={didFrontChartGrow}
+                logsCache={logsCache}
+                onDateSelect={onDateSelect}
+              />
+            </div>
+
+            {/* Desktop: Two column layout */}
+            <div className="hidden lg:grid grid-cols-[auto_1fr] gap-6">
+              {/* Left Column - Main Score Display */}
+              <div className="flex flex-col justify-start">
+                <div className="flex items-baseline gap-2">
+                  <span 
+                    className="text-6xl font-bold"
+                    style={{
+                      transform: animatedScore !== scoreSummary.currentScore ? 'scale(1.1)' : 'scale(1)',
+                      transition: 'transform 300ms ease-out'
+                    }}
+                  >
+                    {animatedScore}
+                  </span>
+                  <div className="bg-opacity-20 rounded-lg p-1.5">
+                    <svg className="w-5 h-5 text-green-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
+                  </div>
+                </div>
+                {(() => {
+                  if (animatedDifference > 0) {
+                    return (
+                      <p className="text-yellow-300 text-shadow-md text-md font-semibold mt-1">
+                        +{Math.round(animatedDifference)} pts vs prior
+                      </p>
+                    );
+                  } else if (animatedDifference < 0) {
+                    return (
+                      <p className="text-pink-100 text-shadow-md text-md mt-1">
+                        {Math.round(animatedDifference)} pts vs prior
+                      </p>
+                    );
+                  } else {
+                    return <p className="text-indigo-200 text-shadow-md text-md mt-1">Same as prior</p>;
+                  }
+                })()}
+                <p className="text-indigo-200 text-md text-shadow-md mt-1">
+                  {((scoreSummary.actionCounts.encourage?.completed || 0) + (scoreSummary.actionCounts.avoid?.completed || 0))} actions
+                </p>
               </div>
 
-              {/* 7-Day Chart - Right Side */}
-              <div className="lg:col-span-3">
-                <WeeklyChart 
-                  todayScore={scoreSummary.todayScore} 
-                  userTimezone={userTimezone} 
-                  selectedDate={selectedDate}
-                  shouldAnimate={didFrontChartGrow}
-                  logsCache={logsCache}
-                />
+              {/* Right Column - Flip Button + Chart */}
+              <div className="flex flex-col">
+                {/* Flip Button at Top Right */}
+                <div className="flex justify-end mb-4">
+                  <button
+                    onClick={toggleFlip}
+                    className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors"
+                    title="Flip to see weekly comparison"
+                  >
+                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                    </svg>
+                  </button>
+                </div>
+                
+                {/* Chart Below Button */}
+                <div className="flex-1">
+                  <WeeklyChart 
+                    todayScore={scoreSummary.todayScore} 
+                    userTimezone={userTimezone} 
+                    selectedDate={selectedDate}
+                    shouldAnimate={didFrontChartGrow}
+                    logsCache={logsCache}
+                    onDateSelect={onDateSelect}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -209,7 +285,7 @@ export default function FlippableScoreChart({
                   title="Flip back to score view"
                 >
                   <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
                   </svg>
                 </button>
               </div>
@@ -234,7 +310,7 @@ export default function FlippableScoreChart({
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
     </div>
   );

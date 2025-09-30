@@ -22,6 +22,12 @@ export const ANIMATION_CONFIG = {
     easing: 'easeOutCubic'
   },
   
+  // FlippableScoreChart animations (slower for larger component)
+  flippableScoreChart: {
+    duration: 3000, // 3000ms (3 seconds) for much slower, more elegant animation
+    easing: 'easeOutCubic'
+  },
+  
   // Quick interactions (buttons, hovers)
   quick: {
     duration: 150,

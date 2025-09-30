@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useUserProfile } from './UserProfileContext';
 import SettingsModal from './SettingsModal';
+import KinisiLogo from './KinisiLogo';
 
 interface NavigationDropdownProps {
   onSignOut?: () => void;
@@ -68,11 +69,12 @@ export default function NavigationDropdown({ onSignOut }: NavigationDropdownProp
             <div className="p-2">
               {/* Header */}
               <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">
-                <div className="text-sm font-medium text-gray-900 dark:text-white">
-                  Kinisi App
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
+                  <span>Kinisi</span>
+                  <KinisiLogo className="w-4 h-4" />
                 </div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">
-                  Habit tracking made simple
+                  Mindful Movement
                 </div>
               </div>
 

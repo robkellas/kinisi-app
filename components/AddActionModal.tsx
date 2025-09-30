@@ -68,19 +68,25 @@ export default function AddActionModal({ onClose, onAdd, onDelete, editingAction
 
     setIsSubmitting(true);
     try {
+      // Ensure targetCount is 1 when "None" is selected
+      const submitData = {
+        ...formData,
+        targetCount: formData.frequency === 'ONETIME' ? 1 : formData.targetCount
+      };
+
       if (editingAction) {
         // Update existing action
-        console.log('Updating action:', editingAction.id, formData);
+        console.log('Updating action:', editingAction.id, submitData);
         await client.models.Action.update({
           id: editingAction.id,
-          ...formData,
+          ...submitData,
         });
         console.log('Action updated successfully');
       } else {
         // Create new action
-        console.log('Creating new action:', formData);
+        console.log('Creating new action:', submitData);
         await client.models.Action.create({
-          ...formData,
+          ...submitData,
           completed: false, // New actions are not completed
           createdAt: new Date().toISOString(),
         });
@@ -193,7 +199,7 @@ export default function AddActionModal({ onClose, onAdd, onDelete, editingAction
                 value={formData.description}
                 onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                 placeholder="Add more details about this action..."
-                rows={3}
+                rows={2}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-800 dark:text-gray-100"
               />
             )}
@@ -222,14 +228,14 @@ export default function AddActionModal({ onClose, onAdd, onDelete, editingAction
             </div>
           </div>
 
-          {/* Frequency */}
+          {/* Repeat */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Frequency
+              Repeat
             </label>
                     <div className="flex gap-2">
                       {[
-                        { value: 'ONETIME', label: 'Once' },
+                        { value: 'ONETIME', label: 'None' },
                         { value: 'DAILY', label: 'Daily' },
                         { value: 'WEEKLY', label: 'Weekly' },
                         { value: 'MONTHLY', label: 'Monthly' }
@@ -250,33 +256,35 @@ export default function AddActionModal({ onClose, onAdd, onDelete, editingAction
             </div>
           </div>
 
-          {/* Target Count */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Target Count
-            </label>
-            <div className="flex gap-2">
-              {[1, 2, 3, 4, 5].map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, targetCount: value }))}
-                  className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                    formData.targetCount === value
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  {value}
-                </button>
-              ))}
+          {/* Target Count - Only show when not "None" */}
+          {formData.frequency !== 'ONETIME' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                {formData.targetCount}x per {formData.frequency === 'DAILY' ? 'day' : formData.frequency === 'WEEKLY' ? 'week' : 'month'}
+              </label>
+              <div className="flex gap-2">
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, targetCount: value }))}
+                    className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                      formData.targetCount === value
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Time of Day */}
+          {/* Routine Time */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Time of Day
+              Routine Time
             </label>
             <div className="grid grid-cols-2 gap-2">
               {[

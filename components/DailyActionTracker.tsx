@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { motion } from 'framer-motion';
 import { generateClient } from "aws-amplify/data";
 import { Amplify } from "aws-amplify";
 import outputs from "@/amplify_outputs.json";
@@ -8,7 +9,6 @@ import type { Schema } from "@/amplify/data/resource";
 import AddActionModal from './AddActionModal';
 import HistoryModal from './HistoryModal';
 import FlippableScoreChart from './FlippableScoreChart';
-import ClearDataModal from './ClearDataModal';
 import { useSound } from './SoundContext';
 import { ANIMATION_CLASSES } from '@/lib/animations';
 import { getTodayInTimezone, getDateInTimezone, getYesterdayInTimezone } from '@/lib/dateUtils';
@@ -60,7 +60,9 @@ export default function DailyActionTracker({
   const [isLoading, setIsLoading] = useState(false);
   const [updatingActions, setUpdatingActions] = useState<Set<string>>(new Set());
   const [selectedDate, setSelectedDate] = useState(() => {
-    return getTodayInTimezone(timezone);
+    // Use user's timezone from profile
+    const initialDate = getTodayInTimezone(timezone);
+    return initialDate;
   });
   const [daysBack, setDaysBack] = useState(0);
   const [completedActions, setCompletedActions] = useState<Set<string>>(new Set());
@@ -69,8 +71,31 @@ export default function DailyActionTracker({
   const [flippedCards, setFlippedCards] = useState<Set<string>>(new Set());
   const [editingAction, setEditingAction] = useState<Action | null>(null);
   const [historyAction, setHistoryAction] = useState<Action | null>(null);
-  const [showClearDataModal, setShowClearDataModal] = useState(false);
   const [hasLoadedWeeklyData, setHasLoadedWeeklyData] = useState(false);
+  const [showSortDropdown, setShowSortDropdown] = useState(false);
+  const [sortBy, setSortBy] = useState<'points' | 'incomplete' | 'routine'>(() => {
+    // Load sort preference from localStorage, default to 'points'
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('kinisi-sort-preference');
+      return (saved as 'points' | 'incomplete' | 'routine') || 'points';
+    }
+    return 'points';
+  });
+  const [sortCounter, setSortCounter] = useState(0);
+
+  // Update selectedDate when timezone changes
+  useEffect(() => {
+    const newSelectedDate = getTodayInTimezone(timezone);
+    setSelectedDate(newSelectedDate);
+    setDaysBack(0); // Reset to today when timezone changes
+  }, [timezone]);
+
+  // Force selectedDate to today on component mount
+  useEffect(() => {
+    const today = getTodayInTimezone(timezone);
+    setSelectedDate(today);
+    setDaysBack(0);
+  }, []); // Run once on mount
 
   // Get current date based on days back
   const getCurrentDate = () => {
@@ -233,7 +258,6 @@ export default function DailyActionTracker({
       setDaysBack(newDaysBack);
       // Use timezone-aware date calculation
       const dateString = getDateInTimezone(newDaysBack, timezone);
-      console.log('Going back one day:', { daysBack: newDaysBack, newDate: dateString, timezone });
       setSelectedDate(dateString);
     }
   };
@@ -244,13 +268,25 @@ export default function DailyActionTracker({
       setDaysBack(newDaysBack);
       // Use timezone-aware date calculation
       const dateString = getDateInTimezone(newDaysBack, timezone);
-      console.log('Going forward one day:', { daysBack: newDaysBack, newDate: dateString, timezone });
       setSelectedDate(dateString);
     }
   };
 
-  const getDateLabel = () => {
-    if (daysBack === 0) return 'Today';
+  const handleDateSelect = (date: string) => {
+    setSelectedDate(date);
+    // Calculate daysBack from the selected date using the same logic as WeeklyChart
+    // WeeklyChart generates dates from 7 days ago (daysBack=7) to today (daysBack=0)
+    // Calculate daysBack using timezone-aware date comparison
+    const todayDate = getTodayInTimezone(timezone);
+    const diffTime = new Date(todayDate + 'T00:00:00').getTime() - new Date(date + 'T00:00:00').getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    setDaysBack(Math.max(0, Math.min(7, diffDays)));
+  };
+
+  const dateLabel = useMemo(() => {
+    if (daysBack === 0) {
+      return 'Today';
+    }
     
     // Calculate the date based on daysBack to ensure consistency
     const currentDate = getDateInTimezone(daysBack, timezone);
@@ -259,9 +295,8 @@ export default function DailyActionTracker({
       weekday: 'short',
       timeZone: timezone
     });
-    console.log('getDateLabel:', { daysBack, currentDate, weekday, timezone });
     return weekday;
-  };
+  }, [daysBack, timezone]);
 
   const toggleCardFlip = (actionId: string) => {
     setFlippedCards(prev => {
@@ -311,6 +346,63 @@ export default function DailyActionTracker({
     onDataUpdate();
   };
 
+  const handleSortChange = (sortType: 'points' | 'incomplete' | 'routine') => {
+    setSortBy(sortType);
+    setSortCounter(prev => prev + 1); // Force re-render
+    setShowSortDropdown(false);
+    
+    // Save sort preference to localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('kinisi-sort-preference', sortType);
+    }
+  };
+
+  // Memoize sorted actions to trigger re-render when sort changes
+  const sortedActions = useMemo(() => {
+    return [...actions].sort((a, b) => {
+      switch (sortBy) {
+        case 'points':
+          const aPoints = a.progressPoints || 0;
+          const bPoints = b.progressPoints || 0;
+          return bPoints - aPoints;
+        case 'incomplete':
+          const aComplete = isActionComplete(a, getActionCount(a.id));
+          const bComplete = isActionComplete(b, getActionCount(b.id));
+          return aComplete === bComplete ? 0 : (aComplete ? 1 : -1);
+        case 'routine':
+          const routineOrder = { 'ANYTIME': 0, 'MORNING': 1, 'AFTERNOON': 2, 'EVENING': 3 };
+          const aOrder = routineOrder[a.timeOfDay as keyof typeof routineOrder] || 0;
+          const bOrder = routineOrder[b.timeOfDay as keyof typeof routineOrder] || 0;
+          return aOrder - bOrder;
+        default:
+          return 0;
+      }
+    });
+  }, [actions, sortBy, sortCounter]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showSortDropdown) {
+        const target = event.target as Element;
+        const dropdown = document.querySelector('[data-sort-dropdown]');
+        
+        // Only close if clicking outside the dropdown
+        if (dropdown && !dropdown.contains(target)) {
+          setShowSortDropdown(false);
+        }
+      }
+    };
+
+    if (showSortDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showSortDropdown]);
+
   // Load all weekly data at once and cache it (only once on mount)
   const loadWeeklyData = async () => {
     if (!user || hasLoadedWeeklyData) return;
@@ -322,9 +414,8 @@ export default function DailyActionTracker({
       // Get the last 7 days
       const dates: string[] = [];
       for (let i = 6; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        dates.push(date.toISOString().split('T')[0]);
+        const date = getDateInTimezone(i, timezone);
+        dates.push(date);
       }
       
       // Fetch all daily logs for the past 7 days
@@ -394,7 +485,7 @@ export default function DailyActionTracker({
   // Calculate score summary with memoization
   const scoreSummary = useMemo(() => {
     // Always use today's date for the score calculation, not the selectedDate
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayInTimezone(timezone);
     const currentDate = selectedDate;
     
     console.log('Calculating score summary for date:', currentDate, 'but todayScore from:', today);
@@ -407,9 +498,7 @@ export default function DailyActionTracker({
     const todayScore = todayLogs.reduce((sum, log) => sum + (log.points || 0), 0);
     
     // Get logs for yesterday (for comparison)
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayDate = yesterday.toISOString().split('T')[0];
+    const yesterdayDate = getDateInTimezone(1, timezone);
     const yesterdayLogs = logsCache[yesterdayDate] || [];
     const yesterdayScore = yesterdayLogs.reduce((sum, log) => sum + (log.points || 0), 0);
     
@@ -450,30 +539,6 @@ export default function DailyActionTracker({
     return (
       <>
         <div className="space-y-6">
-          {/* Date Navigation */}
-          <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
-            <button
-              onClick={goBackOneDay}
-              disabled={daysBack >= 7}
-              className="p-2 rounded-lg bg-gray-100 text-gray-600 dark:text-gray-100 dark:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-600"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              {getDateLabel()}
-            </h2>
-            <button
-              onClick={goForwardOneDay}
-              disabled={daysBack <= 0}
-              className="p-2 rounded-lg bg-gray-100 text-gray-600 dark:text-gray-100 dark:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-600"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          </div>
 
           {/* Empty State */}
           <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
@@ -515,17 +580,22 @@ export default function DailyActionTracker({
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
         <FlippableScoreChart
           scoreSummary={scoreSummary}
-          userTimezone="America/Los_Angeles"
+          userTimezone={timezone}
           selectedDate={selectedDate}
           refreshTrigger={0}
           previousScore={null}
           animationTrigger={0}
           logsCache={logsCache}
+          onDateSelect={handleDateSelect}
         />
       </div>
 
-      {/* Date Navigation */}
-      <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm w-80 mx-auto">
+
+      {/* Actions List */}
+      <div className="p-0">
+        {/* Day Navigation */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-4 w-48">
         <button
           onClick={goBackOneDay}
           disabled={daysBack >= 7}
@@ -535,18 +605,9 @@ export default function DailyActionTracker({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <div className="flex items-center gap-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {getDateLabel()}
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 text-center flex-1">
+              {dateLabel}
           </h2>
-          <button
-            onClick={() => setShowClearDataModal(true)}
-            className="px-3 py-1 text-xs font-medium text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 rounded-full transition-colors"
-            title="Clear all data"
-          >
-            Clear Data
-          </button>
-        </div>
         <button
           onClick={goForwardOneDay}
           disabled={daysBack <= 0}
@@ -557,11 +618,73 @@ export default function DailyActionTracker({
           </svg>
         </button>
       </div>
-
-      {/* Actions List */}
-      <div className="p-0 sm:p-4 sm:bg-white sm:dark:bg-gray-800 sm:rounded-lg sm:shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Actions</h2>
+          <div className="flex items-center gap-2">
+            {/* Sort Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowSortDropdown(!showSortDropdown)}
+                className="p-2 rounded-lg bg-gray-100 text-gray-600 dark:text-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 active:bg-gray-800 active:scale-95 transition-all duration-150 cursor-pointer hover:bg-gray-200"
+                title="Filter and sort actions"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M6 12h12M8 18h8" />
+                </svg>
+              </button>
+              
+              {showSortDropdown && (
+                <div data-sort-dropdown className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50">
+                  <div className="py-1">
+                    <button
+                      onClick={() => handleSortChange('points')}
+                      className={`w-full px-4 py-2 text-left text-sm flex items-center justify-between ${
+                        sortBy === 'points' 
+                          ? 'bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300' 
+                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {sortBy === 'points' && (
+                          <div className="w-2 h-2 bg-purple-600 dark:bg-purple-400 rounded-full"></div>
+                        )}
+                        Points
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => handleSortChange('incomplete')}
+                      className={`w-full px-4 py-2 text-left text-sm flex items-center justify-between ${
+                        sortBy === 'incomplete' 
+                          ? 'bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300' 
+                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {sortBy === 'incomplete' && (
+                          <div className="w-2 h-2 bg-purple-600 dark:bg-purple-400 rounded-full"></div>
+                        )}
+                        Incomplete
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => handleSortChange('routine')}
+                      className={`w-full px-4 py-2 text-left text-sm flex items-center justify-between ${
+                        sortBy === 'routine' 
+                          ? 'bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300' 
+                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {sortBy === 'routine' && (
+                          <div className="w-2 h-2 bg-purple-600 dark:bg-purple-400 rounded-full"></div>
+                        )}
+                        Routine
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* Add Button */}
           <button
             onClick={() => setShowAddModal(true)}
             className="p-2 rounded-lg bg-gray-100 text-gray-600 dark:text-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 active:bg-gray-800 active:scale-95 transition-all duration-150 cursor-pointer hover:bg-gray-200"
@@ -571,17 +694,18 @@ export default function DailyActionTracker({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
           </button>
+          </div>
         </div>
 
         <div className="space-y-3">
-          {actions.map((action) => {
+          {sortedActions.map((action, index) => {
             const count = getActionCount(action.id);
             const isEncourage = action.type === 'ENCOURAGE';
             const isComplete = isActionComplete(action, count);
             const isFlipped = flippedCards.has(action.id);
             
             return (
-              <div key={action.id} className="relative overflow-hidden">
+              <div key={`${action.id}-${sortBy}-${sortCounter}-${index}`} className="relative overflow-hidden">
                 {/* Completion Animation */}
                 {completedActions.has(action.id) && (
                   <div className="absolute inset-0 bg-gradient-to-r from-yellow-400 to-yellow-500 border border-yellow-600 rounded-lg flex items-center justify-center z-20 animate-slide-up">
@@ -592,27 +716,43 @@ export default function DailyActionTracker({
                 )}
 
                 <div className="relative h-24 perspective-1000">
-                  <div 
-                    className={`relative w-full h-full ${ANIMATION_CLASSES.cardFlip}`}
+                  <motion.div 
+                    className="relative w-full h-full"
                     style={{ 
-                      transform: isFlipped ? 'rotateX(180deg)' : 'rotateX(0deg)',
                       transformStyle: 'preserve-3d'
+                    }}
+                    animate={{ 
+                      rotateX: isFlipped ? 180 : 0 
+                    }}
+                    transition={{ 
+                      duration: 0.6,
+                      ease: "easeInOut"
                     }}
                     onClick={() => toggleCardFlip(action.id)}
                   >
                     {/* Front Side - Action Item */}
                     <div
-                      className={`absolute inset-0 flex gap-3 items-stretch p-3 rounded-lg border-l-8 cursor-pointer ${
+                      className={`absolute inset-0 flex gap-3 items-stretch pl-7 pr-3 py-3 rounded-lg cursor-pointer ${
                         isEncourage 
-                          ? 'border-l-green-600 bg-gray-50 dark:bg-gray-700' 
-                          : 'border-l-purple-600 bg-gray-50 dark:bg-gray-700'
+                          ? 'bg-gray-50 dark:bg-gray-700' 
+                          : 'bg-gray-50 dark:bg-gray-700'
                       }`}
                       style={{ 
                         backfaceVisibility: 'hidden',
                         transform: 'rotateX(0deg)'
                       }}
                     >
-                      <div className="flex-1">
+                      {/* Gradient border pseudo-element */}
+                      <div
+                        className="absolute left-0 top-0 bottom-0 w-4 rounded-l-lg"
+                        style={{
+                          background: isEncourage 
+                            ? 'linear-gradient(to bottom, #16a34a, #22c55e, #16a34a)' 
+                            : 'linear-gradient(to bottom, #9333ea, #a855f7, #9333ea)',
+                          zIndex: 1
+                        }}
+                      />
+                      <div className="flex-1 relative z-10">
                         <div className="flex items-center gap-2 mb-1">
                           {action.type === 'AVOID' && (
                             <div className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300">
@@ -649,37 +789,16 @@ export default function DailyActionTracker({
                       <div className="flex items-center">
                         <button
                           onClick={(e) => {
+                            e.preventDefault();
                             e.stopPropagation();
                             updateActionCount(action.id, true);
                           }}
                           disabled={updatingActions.has(action.id)}
-                          className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-transform ${
-                            updatingActions.has(action.id)
-                              ? 'opacity-50 cursor-not-allowed' 
-                              : 'cursor-pointer'
-                          }`}
-                          title={isComplete ? `Completed! Click to add more (${count}/${action.targetCount})` : `Mark as complete (${count}/${action.targetCount})`}
-                        >
-                          <div className="relative w-full h-full">
-                            {/* Progress border */}
-                            {count > 0 && !isComplete && (
-                              <div
-                                className="absolute inset-0 rounded-full"
-                                style={{
-                                  background: `conic-gradient(from 0deg, #fbbf24 ${(count / (action.targetCount || 1)) * 360}deg, transparent ${(count / (action.targetCount || 1)) * 360}deg)`,
-                                  mask: 'radial-gradient(circle at center, transparent 0px, transparent 20px, black 21px)',
-                                  WebkitMask: 'radial-gradient(circle at center, transparent 0px, transparent 20px, black 21px)'
-                                }}
-                              />
-                            )}
-                            
-                            <div 
-                              className={`rounded-full flex items-center justify-center ${
+                          className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200 ${
                                 isComplete 
                                   ? 'bg-gradient-to-t from-amber-400 to-yellow-300 text-gray-800' 
                                   : 'bg-gradient-to-br from-gray-500 to-gray-600 text-white hover:from-gray-600 hover:to-gray-700'
                               }`}
-                              style={{ width: '100%', height: '100%' }}
                             >
                               <div className="relative z-10">
                                 {updatingActions.has(action.id) ? (
@@ -703,14 +822,12 @@ export default function DailyActionTracker({
                                     {count}/{action.targetCount}
                                   </div>
                                 ) : (
-                                  <div>
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <div className="space-y-6">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                     </svg>
                                   </div>
                                 )}
-                              </div>
-                            </div>
                           </div>
                         </button>
                       </div>
@@ -718,16 +835,27 @@ export default function DailyActionTracker({
 
                     {/* Back Side - Management Options */}
                     <div
-                      className={`absolute inset-0 flex items-center justify-between p-3 rounded-lg border-l-8 ${
+                      className={`absolute inset-0 flex items-center justify-between pl-7 pr-3 py-3 rounded-lg cursor-pointer ${
                         isEncourage 
-                          ? 'border-l-green-600 bg-indigo-600' 
-                          : 'border-l-purple-600 bg-indigo-600'
+                          ? 'bg-indigo-600' 
+                          : 'bg-indigo-600'
                       }`}
                       style={{ 
                         backfaceVisibility: 'hidden',
                         transform: 'rotateX(180deg)'
                       }}
                     >
+                      {/* Gradient border pseudo-element */}
+                      <div
+                        className="absolute left-0 top-0 bottom-0 w-4 rounded-l-lg"
+                        style={{
+                          background: isEncourage 
+                            ? 'linear-gradient(to bottom, #16a34a, #22c55e, #16a34a)' 
+                            : 'linear-gradient(to bottom, #9333ea, #a855f7, #9333ea)',
+                          zIndex: 1
+                        }}
+                      />
+                      <div className="flex-1 relative z-10">
                       <div className="flex items-center gap-3">
                         <div 
                           className="p-2 rounded-lg text-white bg-indigo-400"
@@ -742,6 +870,7 @@ export default function DailyActionTracker({
                             {action.name}
                           </p>
                           <p className="text-sm text-indigo-200">Click to edit</p>
+                          </div>
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-2">
@@ -752,7 +881,7 @@ export default function DailyActionTracker({
                               e.stopPropagation();
                               handleViewHistory(action);
                             }}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-indigo-400 text-indigo-100 rounded-xl hover:bg-indigo-500 active:bg-indigo-600 active:scale-95 transition-all duration-100 cursor-pointer"
+                            className="p-2 rounded-lg text-white bg-indigo-400 hover:bg-indigo-500 transition-colors"
                             title="View history"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -765,7 +894,7 @@ export default function DailyActionTracker({
                               e.stopPropagation();
                               handleEditAction(action);
                             }}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-indigo-400 text-indigo-100 rounded-xl hover:bg-indigo-500 active:bg-indigo-600 active:scale-95 transition-all duration-100 cursor-pointer"
+                            className="p-2 rounded-lg text-white bg-indigo-400 hover:bg-indigo-500 transition-colors"
                             title="Edit action"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -779,44 +908,23 @@ export default function DailyActionTracker({
                               e.preventDefault();
                               e.stopPropagation();
                               updateActionCount(action.id, false);
-                              toggleCardFlip(action.id);
                             }}
-                            disabled={updatingActions.has(action.id)}
-                            className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl transition-all duration-50 w-full ${
-                              updatingActions.has(action.id)
-                                ? 'bg-indigo-300 text-indigo-200 cursor-not-allowed'
-                                : 'bg-indigo-400 text-indigo-100 hover:bg-indigo-500 active:bg-indigo-600 active:scale-95 cursor-pointer'
-                            }`}
-                            title="Decrease count"
+                            className="w-full p-2 rounded-lg text-white bg-indigo-400 hover:bg-indigo-500 transition-colors flex items-center justify-center"
+                            title="Decrement count"
                           >
-                            {updatingActions.has(action.id) ? (
-                              <div className="animate-spin rounded-full h-4 w-4 border-2 border-indigo-200 border-t-transparent"></div>
-                            ) : (
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
                               </svg>
-                            )}
                           </button>
                         )}
                       </div>
                     </div>
-                  </div>
+                  </motion.div>
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
-
-      {/* Confetti Celebration */}
-      {showConfetti && (
-        <div className="fixed inset-0 pointer-events-none z-50">
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-6xl"></div>
-          </div>
-        </div>
-      )}
-
       </div>
 
       {/* Add Action Modal */}
@@ -869,14 +977,7 @@ export default function DailyActionTracker({
           />
         )}
 
-        {/* Clear Data Modal */}
-        {showClearDataModal && (
-          <ClearDataModal
-            isOpen={showClearDataModal}
-            onClose={() => setShowClearDataModal(false)}
-            onDataCleared={handleDataCleared}
-          />
-        )}
+      </div>
       </>
     );
   }
