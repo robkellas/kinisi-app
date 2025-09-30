@@ -52,6 +52,21 @@ const schema = a.schema({
       createdAt: a.datetime(),
     })
     .authorization((allow) => [allow.owner()]),
+
+  UserProfile: a
+    .model({
+      // User preferences
+      timezone: a.string().default('America/Los_Angeles'),
+      theme: a.enum(['light', 'dark', 'auto']),
+      
+      // User display preferences
+      displayName: a.string(),
+      
+      // Timestamps
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
+    })
+    .authorization((allow) => [allow.owner()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;

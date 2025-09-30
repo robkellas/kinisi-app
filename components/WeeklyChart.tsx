@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { generateClient } from "aws-amplify/data";
 import { ANIMATION_CONFIG } from '@/lib/animations';
+import { useUserProfile } from './UserProfileContext';
 import { Amplify } from "aws-amplify";
 import outputs from "@/amplify_outputs.json";
 import type { Schema } from "@/amplify/data/resource";
@@ -32,13 +33,14 @@ export default function WeeklyChart({
   shouldAnimate = false,
   logsCache
 }: WeeklyChartProps) {
-          const [isLoading, setIsLoading] = useState(true);
+  const { timezone } = useUserProfile();
+  const [isLoading, setIsLoading] = useState(true);
 
   const CHART_HEIGHT = 180;
   const TOP_PADDING = 40;
 
   // Get date in timezone
-  const getDateInTimezone = (daysBack: number, timezone: string) => {
+  const getDateInTimezone = (daysBack: number, timezoneStr: string) => {
     const date = new Date();
     date.setDate(date.getDate() - daysBack);
     return date.toISOString().split('T')[0];
@@ -49,7 +51,7 @@ export default function WeeklyChart({
     // Always use the last 7 days from today, regardless of selectedDate
     const dates: string[] = [];
     for (let i = 6; i >= 0; i--) {
-      dates.push(getDateInTimezone(i, userTimezone));
+      dates.push(getDateInTimezone(i, timezone));
     }
 
     // Use cached data if available, otherwise use empty data

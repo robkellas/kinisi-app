@@ -11,6 +11,8 @@ import FlippableScoreChart from './FlippableScoreChart';
 import ClearDataModal from './ClearDataModal';
 import { useSound } from './SoundContext';
 import { ANIMATION_CLASSES } from '@/lib/animations';
+import { getTodayInTimezone, getDateInTimezone, getYesterdayInTimezone } from '@/lib/dateUtils';
+import { useUserProfile } from './UserProfileContext';
 // Simple icons using SVG
 
 Amplify.configure(outputs);
@@ -53,11 +55,12 @@ export default function DailyActionTracker({
   }
 
   const { playCompletionSound, playPreCompletionSound, playDecrementSound } = useSound();
+  const { timezone } = useUserProfile();
   const [logsCache, setLogsCache] = useState<Record<string, DailyLog[]>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [updatingActions, setUpdatingActions] = useState<Set<string>>(new Set());
   const [selectedDate, setSelectedDate] = useState(() => {
-    return new Date().toISOString().split('T')[0];
+    return getTodayInTimezone(timezone);
   });
   const [daysBack, setDaysBack] = useState(0);
   const [completedActions, setCompletedActions] = useState<Set<string>>(new Set());
@@ -71,9 +74,7 @@ export default function DailyActionTracker({
 
   // Get current date based on days back
   const getCurrentDate = () => {
-    const date = new Date();
-    date.setDate(date.getDate() - daysBack);
-    return date.toISOString().split('T')[0];
+    return getDateInTimezone(daysBack, timezone);
   };
 
   // Get action count based on daily progress logs
@@ -230,11 +231,9 @@ export default function DailyActionTracker({
     if (daysBack < 7) {
       const newDaysBack = daysBack + 1;
       setDaysBack(newDaysBack);
-      // Immediately update selectedDate to prevent sync issues
-      const newDate = new Date();
-      newDate.setDate(newDate.getDate() - newDaysBack);
-      const dateString = newDate.toISOString().split('T')[0];
-      console.log('Going back one day:', { daysBack: newDaysBack, newDate: dateString });
+      // Use timezone-aware date calculation
+      const dateString = getDateInTimezone(newDaysBack, timezone);
+      console.log('Going back one day:', { daysBack: newDaysBack, newDate: dateString, timezone });
       setSelectedDate(dateString);
     }
   };
@@ -243,11 +242,9 @@ export default function DailyActionTracker({
     if (daysBack > 0) {
       const newDaysBack = daysBack - 1;
       setDaysBack(newDaysBack);
-      // Immediately update selectedDate to prevent sync issues
-      const newDate = new Date();
-      newDate.setDate(newDate.getDate() - newDaysBack);
-      const dateString = newDate.toISOString().split('T')[0];
-      console.log('Going forward one day:', { daysBack: newDaysBack, newDate: dateString });
+      // Use timezone-aware date calculation
+      const dateString = getDateInTimezone(newDaysBack, timezone);
+      console.log('Going forward one day:', { daysBack: newDaysBack, newDate: dateString, timezone });
       setSelectedDate(dateString);
     }
   };
@@ -255,8 +252,15 @@ export default function DailyActionTracker({
   const getDateLabel = () => {
     if (daysBack === 0) return 'Today';
     
-    const date = new Date(selectedDate + 'T00:00:00');
-    return date.toLocaleDateString('en-US', { weekday: 'short' });
+    // Calculate the date based on daysBack to ensure consistency
+    const currentDate = getDateInTimezone(daysBack, timezone);
+    const date = new Date(currentDate + 'T00:00:00');
+    const weekday = date.toLocaleDateString('en-US', { 
+      weekday: 'short',
+      timeZone: timezone
+    });
+    console.log('getDateLabel:', { daysBack, currentDate, weekday, timezone });
+    return weekday;
   };
 
   const toggleCardFlip = (actionId: string) => {
@@ -447,7 +451,7 @@ export default function DailyActionTracker({
       <>
         <div className="space-y-6">
           {/* Date Navigation */}
-          <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm w-40">
+          <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
             <button
               onClick={goBackOneDay}
               disabled={daysBack >= 7}
@@ -508,7 +512,7 @@ export default function DailyActionTracker({
     <>
       <div className="space-y-6">
       {/* Score Chart */}
-      <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
         <FlippableScoreChart
           scoreSummary={scoreSummary}
           userTimezone="America/Los_Angeles"
@@ -521,7 +525,7 @@ export default function DailyActionTracker({
       </div>
 
       {/* Date Navigation */}
-      <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+      <div className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm w-80 mx-auto">
         <button
           onClick={goBackOneDay}
           disabled={daysBack >= 7}
@@ -555,7 +559,7 @@ export default function DailyActionTracker({
       </div>
 
       {/* Actions List */}
-      <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+      <div className="p-0 sm:p-4 sm:bg-white sm:dark:bg-gray-800 sm:rounded-lg sm:shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Actions</h2>
           <button

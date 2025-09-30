@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import ThemeProvider from "@/components/ThemeProvider";
+import { UserProfileProvider } from "@/components/UserProfileContext";
 import { SoundProvider } from "@/components/SoundContext";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -14,6 +14,14 @@ export const metadata: Metadata = {
     shortcut: "/favicon.svg",
     apple: "/favicon.svg",
   },
+  // Add cache control for development
+  ...(process.env.NODE_ENV === 'development' && {
+    other: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    },
+  }),
 };
 
 export default function RootLayout({
@@ -41,11 +49,11 @@ export default function RootLayout({
         />
       </head>
       <body className={`${inter.className} antialiased bg-gray-50 dark:bg-gray-900`}>
-        <ThemeProvider>
+        <UserProfileProvider>
           <SoundProvider>
             {children}
           </SoundProvider>
-        </ThemeProvider>
+        </UserProfileProvider>
       </body>
     </html>
   );
