@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useUserProfile } from './UserProfileContext';
+import { useTheme } from './ThemeContext';
 import SettingsModal from './SettingsModal';
 import KinisiLogo from './KinisiLogo';
 
@@ -13,7 +14,8 @@ export default function NavigationDropdown({ onSignOut }: NavigationDropdownProp
   const [isOpen, setIsOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const { theme, timezone } = useUserProfile();
+  const { theme } = useTheme();
+  const { timezone } = useUserProfile();
 
   // Close dropdown when clicking outside
   useEffect(() => {

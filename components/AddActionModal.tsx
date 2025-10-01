@@ -137,7 +137,7 @@ export default function AddActionModal({ onClose, onAdd, onDelete, editingAction
                   className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
                     formData.type === value
                       ? value === 'ENCOURAGE'
-                        ? 'bg-green-600 text-white'
+                        ? 'bg-indigo-600 text-white'
                         : 'bg-purple-600 text-white'
                       : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                   }`}
@@ -152,7 +152,7 @@ export default function AddActionModal({ onClose, onAdd, onDelete, editingAction
           <div>
             <label className={`block text-sm font-medium mb-2 ${
               formData.type === 'ENCOURAGE' 
-                ? 'text-green-700 dark:text-green-300' 
+                ? 'text-indigo-700 dark:text-indigo-300' 
                 : 'text-purple-700 dark:text-purple-300'
             }`}>
               {formData.type === 'ENCOURAGE' 
@@ -170,7 +170,7 @@ export default function AddActionModal({ onClose, onAdd, onDelete, editingAction
               }
               className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 dark:bg-gray-800 dark:text-gray-100 ${
                 formData.type === 'ENCOURAGE'
-                  ? 'border-green-300 dark:border-green-600 focus:ring-green-500 focus:border-green-500 bg-green-50 dark:bg-green-900/20'
+                  ? 'border-indigo-300 dark:border-indigo-600 focus:ring-indigo-500 focus:border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
                   : 'border-purple-300 dark:border-purple-600 focus:ring-purple-500 focus:border-purple-500 bg-purple-50 dark:bg-purple-900/20'
               }`}
               required

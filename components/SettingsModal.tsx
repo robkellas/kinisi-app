@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useUserProfile, COMMON_TIMEZONES } from './UserProfileContext';
+import { useTheme } from './ThemeContext';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -9,7 +10,8 @@ interface SettingsModalProps {
 }
 
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const { theme, setTheme, timezone, setTimezone } = useUserProfile();
+  const { theme, setTheme } = useTheme();
+  const { timezone, setTimezone } = useUserProfile();
   const [tempTheme, setTempTheme] = useState(theme);
   const [tempTimezone, setTempTimezone] = useState(timezone);
 
