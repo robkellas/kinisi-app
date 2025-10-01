@@ -73,19 +73,28 @@ export default function DailyActionTracker({
   const [editingAction, setEditingAction] = useState<Action | null>(null);
   const [historyAction, setHistoryAction] = useState<Action | null>(null);
   const [hasLoadedWeeklyData, setHasLoadedWeeklyData] = useState(false);
-  const [showSortDropdown, setShowSortDropdown] = useState(false);
-  const [sortBy, setSortBy] = useState<'points' | 'incomplete' | 'routine'>(() => {
-    // Load sort preference from localStorage, default to 'points'
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('kinisi-sort-preference');
-      return (saved as 'points' | 'incomplete' | 'routine') || 'points';
+      const saved = localStorage.getItem('kinisi-sort-order');
+      return (saved as 'asc' | 'desc') || 'desc';
     }
-    return 'points';
+    return 'desc';
   });
-  const [sortCounter, setSortCounter] = useState(0);
   
-  // Filtering state for expandable sections
-  const [expandedTimePeriods, setExpandedTimePeriods] = useState<Record<string, boolean>>({});
+  // Filter state
+  const [activeFilters, setActiveFilters] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('kinisi-filter-preferences');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    }
+    return {
+      types: ['ENCOURAGE', 'AVOID'],
+      times: ['MORNING', 'AFTERNOON', 'EVENING', 'ANYTIME'],
+      statuses: ['INCOMPLETE', 'COMPLETE']
+    };
+  });
 
   // Update selectedDate when timezone changes
   useEffect(() => {
@@ -94,17 +103,19 @@ export default function DailyActionTracker({
     setDaysBack(0); // Reset to today when timezone changes
   }, [timezone]);
 
-  // Initialize expanded time periods based on loaded sort preference
+  // Save filter preferences to localStorage
   useEffect(() => {
-    if (sortBy === 'routine') {
-      // For routine sort, don't expand any sections initially - show current time period
-      setExpandedTimePeriods({});
-    } else if (sortBy === 'incomplete') {
-      // For incomplete sort, don't expand completed section initially
-      setExpandedTimePeriods({});
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('kinisi-filter-preferences', JSON.stringify(activeFilters));
     }
-    // For points sort, no expandable sections needed
-  }, [sortBy]);
+  }, [activeFilters]);
+
+  // Save sort order to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('kinisi-sort-order', sortOrder);
+    }
+  }, [sortOrder]);
 
   // Force selectedDate to today on component mount
   useEffect(() => {
@@ -378,80 +389,74 @@ export default function DailyActionTracker({
     onDataUpdate();
   };
 
-  const handleSortChange = (sortType: 'points' | 'incomplete' | 'routine') => {
-    setSortBy(sortType);
-    setSortCounter(prev => prev + 1); // Force re-render
-    setShowSortDropdown(false);
-    
-    // Reset expanded time periods when changing sort
-    setExpandedTimePeriods({});
-    
-    // Save sort preference to localStorage
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('kinisi-sort-preference', sortType);
-    }
+  // Filter toggle functions
+  const toggleFilter = (category: 'types' | 'times' | 'statuses', value: string) => {
+    setActiveFilters((prev: typeof activeFilters) => {
+      const current = prev[category];
+      const newValues = current.includes(value)
+        ? current.filter((v: string) => v !== value)
+        : [...current, value];
+      
+      return {
+        ...prev,
+        [category]: newValues
+      };
+    });
   };
 
+  // Get available filter values from current actions
+  const availableFilters = useMemo(() => {
+    const types = new Set<string>();
+    const times = new Set<string>();
+    const statuses = new Set<string>();
+    
+    actions.forEach(action => {
+      if (action.type) types.add(action.type);
+      if (action.timeOfDay) times.add(action.timeOfDay);
+      
+      const isComplete = isActionComplete(action, getActionCount(action.id));
+      statuses.add(isComplete ? 'COMPLETE' : 'INCOMPLETE');
+    });
+    
+    return {
+      types: Array.from(types),
+      times: Array.from(times),
+      statuses: Array.from(statuses)
+    };
+  }, [actions, selectedDate, logsCache]);
+
   // Memoize sorted and filtered actions
-  const { visibleActions, hiddenActions } = useMemo(() => {
-    const sorted = [...actions].sort((a, b) => {
-      switch (sortBy) {
-        case 'points':
-          const aPoints = a.progressPoints || 0;
-          const bPoints = b.progressPoints || 0;
-          return bPoints - aPoints;
-        case 'incomplete':
-          const aComplete = isActionComplete(a, getActionCount(a.id));
-          const bComplete = isActionComplete(b, getActionCount(b.id));
-          return aComplete === bComplete ? 0 : (aComplete ? 1 : -1);
-        case 'routine':
-          const routineOrder = { 'MORNING': 1, 'AFTERNOON': 2, 'EVENING': 3, 'ANYTIME': 4 };
-          const aOrder = routineOrder[a.timeOfDay as keyof typeof routineOrder] || 4;
-          const bOrder = routineOrder[b.timeOfDay as keyof typeof routineOrder] || 4;
-          return aOrder - bOrder;
-        default:
-          return 0;
+  const filteredActions = useMemo(() => {
+    // First, apply filters
+    let filtered = actions.filter(action => {
+      // Filter by type
+      if (!activeFilters.types.includes(action.type)) {
+        return false;
       }
+      
+      // Filter by time of day
+      if (!activeFilters.times.includes(action.timeOfDay)) {
+        return false;
+      }
+      
+      // Filter by completion status
+      const isComplete = isActionComplete(action, getActionCount(action.id));
+      const status = isComplete ? 'COMPLETE' : 'INCOMPLETE';
+      if (!activeFilters.statuses.includes(status)) {
+        return false;
+      }
+      
+      return true;
     });
 
-    // For routine and incomplete sorts, filter into visible/hidden
-    if (sortBy === 'routine') {
-      const currentTime = getCurrentTimeOfDay();
-      const visible = sorted.filter(action => action.timeOfDay === currentTime);
-      const hidden = sorted.filter(action => action.timeOfDay !== currentTime);
-      return { visibleActions: visible, hiddenActions: hidden };
-    } else if (sortBy === 'incomplete') {
-      const visible = sorted.filter(action => !isActionComplete(action, getActionCount(action.id)));
-      const hidden = sorted.filter(action => isActionComplete(action, getActionCount(action.id)));
-      return { visibleActions: visible, hiddenActions: hidden };
-    } else {
-      // For points sort, show all actions
-      return { visibleActions: sorted, hiddenActions: [] };
-    }
-  }, [actions, sortBy, sortCounter, timezone, selectedDate, logsCache]);
+    // Then, sort by points
+    return filtered.sort((a, b) => {
+      const aPoints = a.progressPoints || 0;
+      const bPoints = b.progressPoints || 0;
+      return sortOrder === 'desc' ? bPoints - aPoints : aPoints - bPoints;
+    });
+  }, [actions, timezone, selectedDate, logsCache, activeFilters, sortOrder]);
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (showSortDropdown) {
-        const target = event.target as Element;
-        const dropdown = document.querySelector('[data-sort-dropdown]');
-        
-        // Only close if clicking outside the dropdown
-        if (dropdown && !dropdown.contains(target)) {
-          setShowSortDropdown(false);
-        }
-      }
-    };
-
-    if (showSortDropdown) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showSortDropdown]);
 
   // Load all weekly data at once and cache it (only once on mount)
   const loadWeeklyData = async () => {
@@ -670,69 +675,20 @@ export default function DailyActionTracker({
       </div>
           <div className="flex items-center gap-2">
             {/* Sort Dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setShowSortDropdown(!showSortDropdown)}
-                className="p-2 rounded-lg bg-gray-100 text-gray-600 dark:text-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 active:bg-gray-800 active:scale-95 transition-all duration-150 cursor-pointer hover:bg-gray-200"
-                title="Filter and sort actions"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M6 12h12M8 18h8" />
-                </svg>
-              </button>
-              
-              {showSortDropdown && (
-                <div data-sort-dropdown className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50">
-                  <div className="py-1">
-                    <button
-                      onClick={() => handleSortChange('points')}
-                      className={`w-full px-4 py-2 text-left text-sm flex items-center justify-between ${
-                        sortBy === 'points' 
-                          ? 'bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300' 
-                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        {sortBy === 'points' && (
-                          <div className="w-2 h-2 bg-purple-600 dark:bg-purple-400 rounded-full"></div>
-                        )}
-                        Points
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => handleSortChange('incomplete')}
-                      className={`w-full px-4 py-2 text-left text-sm flex items-center justify-between ${
-                        sortBy === 'incomplete' 
-                          ? 'bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300' 
-                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        {sortBy === 'incomplete' && (
-                          <div className="w-2 h-2 bg-purple-600 dark:bg-purple-400 rounded-full"></div>
-                        )}
-                        Incomplete
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => handleSortChange('routine')}
-                      className={`w-full px-4 py-2 text-left text-sm flex items-center justify-between ${
-                        sortBy === 'routine' 
-                          ? 'bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300' 
-                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        {sortBy === 'routine' && (
-                          <div className="w-2 h-2 bg-purple-600 dark:bg-purple-400 rounded-full"></div>
-                        )}
-                        Routine
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* Sort Button */}
+            <button
+              onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+              className="p-2 rounded-lg bg-gray-100 text-gray-600 dark:text-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 active:bg-gray-800 active:scale-95 transition-all duration-150 cursor-pointer hover:bg-gray-200"
+              title={`Sort ${sortOrder === 'desc' ? 'descending' : 'ascending'}`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {sortOrder === 'desc' ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                )}
+              </svg>
+            </button>
             
             {/* Add Button */}
           <button
@@ -744,18 +700,91 @@ export default function DailyActionTracker({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
           </button>
-          </div>
         </div>
+                    </div>
+
+        {/* Filter UI - Always visible */}
+        <div className="space-y-2 mb-4">
+          {/* Routine Filters */}
+          {availableFilters.times.length > 0 && (
+            <div className="flex gap-2">
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center w-[3rem] flex-shrink-0">
+                Routine:
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {['MORNING', 'AFTERNOON', 'EVENING', 'ANYTIME'].filter(time => 
+                  availableFilters.times.includes(time)
+                ).map(time => (
+                  <button
+                    key={time}
+                    onClick={() => toggleFilter('times', time)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                      activeFilters.times.includes(time)
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                        : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                    }`}
+                  >
+                    {activeFilters.times.includes(time) && (
+                      <div className="w-1.5 h-1.5 bg-green-600 dark:bg-green-400 rounded-full"></div>
+                    )}
+                    {time.charAt(0) + time.slice(1).toLowerCase()}
+                  </button>
+                ))}
+                          </div>
+                          </div>
+                        )}
+                        
+          {/* Status Filters */}
+          {availableFilters.statuses.length > 0 && (
+            <div className="flex gap-2">
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center w-[3rem] flex-shrink-0">
+                Status:
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {availableFilters.statuses.includes('INCOMPLETE') && (
+                        <button
+                    onClick={() => toggleFilter('statuses', 'INCOMPLETE')}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                      activeFilters.statuses.includes('INCOMPLETE')
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                        : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                    }`}
+                  >
+                    {activeFilters.statuses.includes('INCOMPLETE') && (
+                      <div className="w-1.5 h-1.5 bg-green-600 dark:bg-green-400 rounded-full"></div>
+                    )}
+                    Incomplete
+                        </button>
+                )}
+                {availableFilters.statuses.includes('COMPLETE') && (
+                          <button
+                    onClick={() => toggleFilter('statuses', 'COMPLETE')}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                      activeFilters.statuses.includes('COMPLETE')
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                        : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                    }`}
+                  >
+                    {activeFilters.statuses.includes('COMPLETE') && (
+                      <div className="w-1.5 h-1.5 bg-green-600 dark:bg-green-400 rounded-full"></div>
+                    )}
+                    Complete
+                          </button>
+                        )}
+                      </div>
+                    </div>
+          )}
+                  </div>
 
         <div className="space-y-3">
-          {visibleActions.map((action, index) => {
+          {filteredActions.map((action, index) => {
             const count = getActionCount(action.id);
             const isEncourage = action.type === 'ENCOURAGE';
             const isComplete = isActionComplete(action, count);
             const isFlipped = flippedCards.has(action.id);
             
             return (
-              <div key={`${action.id}-${sortBy}-${sortCounter}-${index}`} className="relative">
+              <div key={`${action.id}-${sortOrder}-${index}`} className="relative">
                 <ActionItem
                   action={action}
                   count={count}
@@ -771,107 +800,6 @@ export default function DailyActionTracker({
               </div>
             );
           })}
-
-          {/* Expandable "See All" sections */}
-          {hiddenActions.length > 0 && (
-            <div className="space-y-3">
-              {sortBy === 'routine' && (
-                <div>
-                  <button
-                    onClick={() => setExpandedTimePeriods(prev => ({
-                      ...prev,
-                      'other-times': !prev['other-times']
-                    }))}
-                    className="w-full flex items-center justify-between p-3 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
-                  >
-                    <span>See All Other Times</span>
-                    <svg 
-                      className={`w-4 h-4 transition-transform ${expandedTimePeriods['other-times'] ? 'rotate-180' : ''}`}
-                      fill="none" 
-                      stroke="currentColor" 
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  {expandedTimePeriods['other-times'] && (
-                    <div className="space-y-3">
-                      {hiddenActions.map((action, index) => {
-                        const count = getActionCount(action.id);
-                        const isComplete = isActionComplete(action, count);
-                        const isFlipped = flippedCards.has(action.id);
-                        
-                        return (
-                          <div key={`${action.id}-${sortBy}-${sortCounter}-hidden-${index}`} className="relative">
-                            <ActionItem
-                              action={action}
-                              count={count}
-                              isComplete={isComplete}
-                              isFlipped={isFlipped}
-                              isUpdating={updatingActions.has(action.id)}
-                              showCompletionAnimation={completedActions.has(action.id)}
-                              onToggleFlip={() => toggleCardFlip(action.id)}
-                              onUpdateCount={(increment) => updateActionCount(action.id, increment)}
-                              onViewHistory={() => handleViewHistory(action)}
-                              onEditAction={() => handleEditAction(action)}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-              
-              {sortBy === 'incomplete' && (
-                <div>
-                  <button
-                    onClick={() => setExpandedTimePeriods(prev => ({
-                      ...prev,
-                      'completed': !prev['completed']
-                    }))}
-                    className="w-full flex items-center justify-between p-3 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
-                  >
-                    <span>See All Completed ({hiddenActions.length})</span>
-                    <svg 
-                      className={`w-4 h-4 transition-transform ${expandedTimePeriods['completed'] ? 'rotate-180' : ''}`}
-                      fill="none" 
-                      stroke="currentColor" 
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  {expandedTimePeriods['completed'] && (
-                    <div className="space-y-3">
-                      {hiddenActions.map((action, index) => {
-                        const count = getActionCount(action.id);
-                        const isComplete = isActionComplete(action, count);
-                        const isFlipped = flippedCards.has(action.id);
-                        
-                        return (
-                          <div key={`${action.id}-${sortBy}-${sortCounter}-hidden-${index}`} className="relative">
-                            <ActionItem
-                              action={action}
-                              count={count}
-                              isComplete={isComplete}
-                              isFlipped={isFlipped}
-                              isUpdating={updatingActions.has(action.id)}
-                              showCompletionAnimation={completedActions.has(action.id)}
-                              onToggleFlip={() => toggleCardFlip(action.id)}
-                              onUpdateCount={(increment) => updateActionCount(action.id, increment)}
-                              onViewHistory={() => handleViewHistory(action)}
-                              onEditAction={() => handleEditAction(action)}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
