@@ -11,6 +11,7 @@ interface ActionItemProps {
   isComplete: boolean;
   isFlipped: boolean;
   isUpdating: boolean;
+  showCompletionAnimation?: boolean;
   onToggleFlip: () => void;
   onUpdateCount: (increment: boolean) => void;
   onViewHistory: () => void;
@@ -23,6 +24,7 @@ export default function ActionItem({
   isComplete,
   isFlipped,
   isUpdating,
+  showCompletionAnimation = false,
   onToggleFlip,
   onUpdateCount,
   onViewHistory,
@@ -32,6 +34,15 @@ export default function ActionItem({
 
   return (
     <div className="relative h-24 perspective-1000">
+      {/* Completion Animation */}
+      {showCompletionAnimation && (
+        <div className="absolute inset-0 bg-gradient-to-r from-yellow-400 to-yellow-500 border border-yellow-600 rounded-lg flex items-center justify-center z-20 animate-slide-up">
+          <div className="text-white font-bold text-lg drop-shadow-lg">
+            Complete!
+          </div>
+        </div>
+      )}
+      
       <motion.div 
         className="relative w-full h-full"
         style={{ 
@@ -81,13 +92,7 @@ export default function ActionItem({
                 {action.progressPoints} pts
               </div>
               <div className="px-2 py-1 rounded bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-                {action.frequency}
-              </div>
-              <div className="px-2 py-1 rounded bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
                 {action.timeOfDay}
-              </div>
-              <div className="px-2 py-1 rounded bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-                Target: {action.targetCount}
               </div>
             </div>
           </div>

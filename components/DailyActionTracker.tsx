@@ -83,6 +83,9 @@ export default function DailyActionTracker({
     return 'points';
   });
   const [sortCounter, setSortCounter] = useState(0);
+  
+  // Filtering state for expandable sections
+  const [expandedTimePeriods, setExpandedTimePeriods] = useState<Record<string, boolean>>({});
 
   // Update selectedDate when timezone changes
   useEffect(() => {
@@ -90,6 +93,18 @@ export default function DailyActionTracker({
     setSelectedDate(newSelectedDate);
     setDaysBack(0); // Reset to today when timezone changes
   }, [timezone]);
+
+  // Initialize expanded time periods based on loaded sort preference
+  useEffect(() => {
+    if (sortBy === 'routine') {
+      // For routine sort, don't expand any sections initially - show current time period
+      setExpandedTimePeriods({});
+    } else if (sortBy === 'incomplete') {
+      // For incomplete sort, don't expand completed section initially
+      setExpandedTimePeriods({});
+    }
+    // For points sort, no expandable sections needed
+  }, [sortBy]);
 
   // Force selectedDate to today on component mount
   useEffect(() => {
@@ -113,6 +128,22 @@ export default function DailyActionTracker({
   // Check if action is complete
   const isActionComplete = (action: Action, count: number) => {
     return count >= (action.targetCount || 0);
+  };
+
+  // Get current time of day based on user's timezone
+  const getCurrentTimeOfDay = (): 'MORNING' | 'AFTERNOON' | 'EVENING' | 'ANYTIME' => {
+    const now = new Date();
+    const hour = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      hour12: false
+    }).formatToParts(now).find(part => part.type === 'hour')?.value || '12';
+    
+    const hourNum = parseInt(hour);
+    if (hourNum >= 6 && hourNum < 12) return 'MORNING';
+    if (hourNum >= 12 && hourNum < 18) return 'AFTERNOON';
+    if (hourNum >= 18 && hourNum < 22) return 'EVENING';
+    return 'ANYTIME';
   };
 
   // Update action count
@@ -352,15 +383,18 @@ export default function DailyActionTracker({
     setSortCounter(prev => prev + 1); // Force re-render
     setShowSortDropdown(false);
     
+    // Reset expanded time periods when changing sort
+    setExpandedTimePeriods({});
+    
     // Save sort preference to localStorage
     if (typeof window !== 'undefined') {
       localStorage.setItem('kinisi-sort-preference', sortType);
     }
   };
 
-  // Memoize sorted actions to trigger re-render when sort changes
-  const sortedActions = useMemo(() => {
-    return [...actions].sort((a, b) => {
+  // Memoize sorted and filtered actions
+  const { visibleActions, hiddenActions } = useMemo(() => {
+    const sorted = [...actions].sort((a, b) => {
       switch (sortBy) {
         case 'points':
           const aPoints = a.progressPoints || 0;
@@ -371,15 +405,30 @@ export default function DailyActionTracker({
           const bComplete = isActionComplete(b, getActionCount(b.id));
           return aComplete === bComplete ? 0 : (aComplete ? 1 : -1);
         case 'routine':
-          const routineOrder = { 'ANYTIME': 0, 'MORNING': 1, 'AFTERNOON': 2, 'EVENING': 3 };
-          const aOrder = routineOrder[a.timeOfDay as keyof typeof routineOrder] || 0;
-          const bOrder = routineOrder[b.timeOfDay as keyof typeof routineOrder] || 0;
+          const routineOrder = { 'MORNING': 1, 'AFTERNOON': 2, 'EVENING': 3, 'ANYTIME': 4 };
+          const aOrder = routineOrder[a.timeOfDay as keyof typeof routineOrder] || 4;
+          const bOrder = routineOrder[b.timeOfDay as keyof typeof routineOrder] || 4;
           return aOrder - bOrder;
         default:
           return 0;
       }
     });
-  }, [actions, sortBy, sortCounter]);
+
+    // For routine and incomplete sorts, filter into visible/hidden
+    if (sortBy === 'routine') {
+      const currentTime = getCurrentTimeOfDay();
+      const visible = sorted.filter(action => action.timeOfDay === currentTime);
+      const hidden = sorted.filter(action => action.timeOfDay !== currentTime);
+      return { visibleActions: visible, hiddenActions: hidden };
+    } else if (sortBy === 'incomplete') {
+      const visible = sorted.filter(action => !isActionComplete(action, getActionCount(action.id)));
+      const hidden = sorted.filter(action => isActionComplete(action, getActionCount(action.id)));
+      return { visibleActions: visible, hiddenActions: hidden };
+    } else {
+      // For points sort, show all actions
+      return { visibleActions: sorted, hiddenActions: [] };
+    }
+  }, [actions, sortBy, sortCounter, timezone, selectedDate, logsCache]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -409,17 +458,17 @@ export default function DailyActionTracker({
     if (!user || hasLoadedWeeklyData) return;
     
     try {
-      console.log('Loading weekly data for past 7 days (first time)');
+      console.log('Loading weekly data for past 8 days (first time)');
       setHasLoadedWeeklyData(true);
       
-      // Get the last 7 days
+      // Get the last 8 days (7 days + today) to match WeeklyChart needs
       const dates: string[] = [];
-      for (let i = 6; i >= 0; i--) {
+      for (let i = 7; i >= 0; i--) {
         const date = getDateInTimezone(i, timezone);
         dates.push(date);
       }
       
-      // Fetch all daily logs for the past 7 days
+      // Fetch all daily logs for the past 8 days
       const { data: logs } = await client.models.DailyLog.list();
       
       // Group logs by date
@@ -699,7 +748,7 @@ export default function DailyActionTracker({
         </div>
 
         <div className="space-y-3">
-          {sortedActions.map((action, index) => {
+          {visibleActions.map((action, index) => {
             const count = getActionCount(action.id);
             const isEncourage = action.type === 'ENCOURAGE';
             const isComplete = isActionComplete(action, count);
@@ -707,21 +756,13 @@ export default function DailyActionTracker({
             
             return (
               <div key={`${action.id}-${sortBy}-${sortCounter}-${index}`} className="relative">
-                {/* Completion Animation */}
-                {completedActions.has(action.id) && (
-                  <div className="absolute inset-0 bg-gradient-to-r from-yellow-400 to-yellow-500 border border-yellow-600 rounded-lg flex items-center justify-center z-20 animate-slide-up">
-                    <div className="text-white font-bold text-lg drop-shadow-lg">
-                      Complete!
-                    </div>
-                  </div>
-                )}
-
                 <ActionItem
                   action={action}
                   count={count}
                   isComplete={isComplete}
                   isFlipped={isFlipped}
                   isUpdating={updatingActions.has(action.id)}
+                  showCompletionAnimation={completedActions.has(action.id)}
                   onToggleFlip={() => toggleCardFlip(action.id)}
                   onUpdateCount={(increment) => updateActionCount(action.id, increment)}
                   onViewHistory={() => handleViewHistory(action)}
@@ -730,6 +771,107 @@ export default function DailyActionTracker({
               </div>
             );
           })}
+
+          {/* Expandable "See All" sections */}
+          {hiddenActions.length > 0 && (
+            <div className="space-y-3">
+              {sortBy === 'routine' && (
+                <div>
+                  <button
+                    onClick={() => setExpandedTimePeriods(prev => ({
+                      ...prev,
+                      'other-times': !prev['other-times']
+                    }))}
+                    className="w-full flex items-center justify-between p-3 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
+                  >
+                    <span>See All Other Times</span>
+                    <svg 
+                      className={`w-4 h-4 transition-transform ${expandedTimePeriods['other-times'] ? 'rotate-180' : ''}`}
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {expandedTimePeriods['other-times'] && (
+                    <div className="space-y-3">
+                      {hiddenActions.map((action, index) => {
+                        const count = getActionCount(action.id);
+                        const isComplete = isActionComplete(action, count);
+                        const isFlipped = flippedCards.has(action.id);
+                        
+                        return (
+                          <div key={`${action.id}-${sortBy}-${sortCounter}-hidden-${index}`} className="relative">
+                            <ActionItem
+                              action={action}
+                              count={count}
+                              isComplete={isComplete}
+                              isFlipped={isFlipped}
+                              isUpdating={updatingActions.has(action.id)}
+                              showCompletionAnimation={completedActions.has(action.id)}
+                              onToggleFlip={() => toggleCardFlip(action.id)}
+                              onUpdateCount={(increment) => updateActionCount(action.id, increment)}
+                              onViewHistory={() => handleViewHistory(action)}
+                              onEditAction={() => handleEditAction(action)}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {sortBy === 'incomplete' && (
+                <div>
+                  <button
+                    onClick={() => setExpandedTimePeriods(prev => ({
+                      ...prev,
+                      'completed': !prev['completed']
+                    }))}
+                    className="w-full flex items-center justify-between p-3 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
+                  >
+                    <span>See All Completed ({hiddenActions.length})</span>
+                    <svg 
+                      className={`w-4 h-4 transition-transform ${expandedTimePeriods['completed'] ? 'rotate-180' : ''}`}
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {expandedTimePeriods['completed'] && (
+                    <div className="space-y-3">
+                      {hiddenActions.map((action, index) => {
+                        const count = getActionCount(action.id);
+                        const isComplete = isActionComplete(action, count);
+                        const isFlipped = flippedCards.has(action.id);
+                        
+                        return (
+                          <div key={`${action.id}-${sortBy}-${sortCounter}-hidden-${index}`} className="relative">
+                            <ActionItem
+                              action={action}
+                              count={count}
+                              isComplete={isComplete}
+                              isFlipped={isFlipped}
+                              isUpdating={updatingActions.has(action.id)}
+                              showCompletionAnimation={completedActions.has(action.id)}
+                              onToggleFlip={() => toggleCardFlip(action.id)}
+                              onUpdateCount={(increment) => updateActionCount(action.id, increment)}
+                              onViewHistory={() => handleViewHistory(action)}
+                              onEditAction={() => handleEditAction(action)}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
