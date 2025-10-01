@@ -8,6 +8,7 @@ import outputs from "@/amplify_outputs.json";
 import type { Schema } from "@/amplify/data/resource";
 import AddActionModal from './AddActionModal';
 import HistoryModal from './HistoryModal';
+import ActionItem from './ActionItem';
 import FlippableScoreChart from './FlippableScoreChart';
 import { useSound } from './SoundContext';
 import { ANIMATION_CLASSES } from '@/lib/animations';
@@ -82,6 +83,9 @@ export default function DailyActionTracker({
     return 'points';
   });
   const [sortCounter, setSortCounter] = useState(0);
+  
+  // Filtering state for expandable sections
+  const [expandedTimePeriods, setExpandedTimePeriods] = useState<Record<string, boolean>>({});
 
   // Update selectedDate when timezone changes
   useEffect(() => {
@@ -89,6 +93,18 @@ export default function DailyActionTracker({
     setSelectedDate(newSelectedDate);
     setDaysBack(0); // Reset to today when timezone changes
   }, [timezone]);
+
+  // Initialize expanded time periods based on loaded sort preference
+  useEffect(() => {
+    if (sortBy === 'routine') {
+      // For routine sort, don't expand any sections initially - show current time period
+      setExpandedTimePeriods({});
+    } else if (sortBy === 'incomplete') {
+      // For incomplete sort, don't expand completed section initially
+      setExpandedTimePeriods({});
+    }
+    // For points sort, no expandable sections needed
+  }, [sortBy]);
 
   // Force selectedDate to today on component mount
   useEffect(() => {
@@ -112,6 +128,22 @@ export default function DailyActionTracker({
   // Check if action is complete
   const isActionComplete = (action: Action, count: number) => {
     return count >= (action.targetCount || 0);
+  };
+
+  // Get current time of day based on user's timezone
+  const getCurrentTimeOfDay = (): 'MORNING' | 'AFTERNOON' | 'EVENING' | 'ANYTIME' => {
+    const now = new Date();
+    const hour = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      hour12: false
+    }).formatToParts(now).find(part => part.type === 'hour')?.value || '12';
+    
+    const hourNum = parseInt(hour);
+    if (hourNum >= 6 && hourNum < 12) return 'MORNING';
+    if (hourNum >= 12 && hourNum < 18) return 'AFTERNOON';
+    if (hourNum >= 18 && hourNum < 22) return 'EVENING';
+    return 'ANYTIME';
   };
 
   // Update action count
@@ -351,15 +383,18 @@ export default function DailyActionTracker({
     setSortCounter(prev => prev + 1); // Force re-render
     setShowSortDropdown(false);
     
+    // Reset expanded time periods when changing sort
+    setExpandedTimePeriods({});
+    
     // Save sort preference to localStorage
     if (typeof window !== 'undefined') {
       localStorage.setItem('kinisi-sort-preference', sortType);
     }
   };
 
-  // Memoize sorted actions to trigger re-render when sort changes
-  const sortedActions = useMemo(() => {
-    return [...actions].sort((a, b) => {
+  // Memoize sorted and filtered actions
+  const { visibleActions, hiddenActions } = useMemo(() => {
+    const sorted = [...actions].sort((a, b) => {
       switch (sortBy) {
         case 'points':
           const aPoints = a.progressPoints || 0;
@@ -370,15 +405,30 @@ export default function DailyActionTracker({
           const bComplete = isActionComplete(b, getActionCount(b.id));
           return aComplete === bComplete ? 0 : (aComplete ? 1 : -1);
         case 'routine':
-          const routineOrder = { 'ANYTIME': 0, 'MORNING': 1, 'AFTERNOON': 2, 'EVENING': 3 };
-          const aOrder = routineOrder[a.timeOfDay as keyof typeof routineOrder] || 0;
-          const bOrder = routineOrder[b.timeOfDay as keyof typeof routineOrder] || 0;
+          const routineOrder = { 'MORNING': 1, 'AFTERNOON': 2, 'EVENING': 3, 'ANYTIME': 4 };
+          const aOrder = routineOrder[a.timeOfDay as keyof typeof routineOrder] || 4;
+          const bOrder = routineOrder[b.timeOfDay as keyof typeof routineOrder] || 4;
           return aOrder - bOrder;
         default:
           return 0;
       }
     });
-  }, [actions, sortBy, sortCounter]);
+
+    // For routine and incomplete sorts, filter into visible/hidden
+    if (sortBy === 'routine') {
+      const currentTime = getCurrentTimeOfDay();
+      const visible = sorted.filter(action => action.timeOfDay === currentTime);
+      const hidden = sorted.filter(action => action.timeOfDay !== currentTime);
+      return { visibleActions: visible, hiddenActions: hidden };
+    } else if (sortBy === 'incomplete') {
+      const visible = sorted.filter(action => !isActionComplete(action, getActionCount(action.id)));
+      const hidden = sorted.filter(action => isActionComplete(action, getActionCount(action.id)));
+      return { visibleActions: visible, hiddenActions: hidden };
+    } else {
+      // For points sort, show all actions
+      return { visibleActions: sorted, hiddenActions: [] };
+    }
+  }, [actions, sortBy, sortCounter, timezone, selectedDate, logsCache]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -408,17 +458,17 @@ export default function DailyActionTracker({
     if (!user || hasLoadedWeeklyData) return;
     
     try {
-      console.log('Loading weekly data for past 7 days (first time)');
+      console.log('Loading weekly data for past 8 days (first time)');
       setHasLoadedWeeklyData(true);
       
-      // Get the last 7 days
+      // Get the last 8 days (7 days + today) to match WeeklyChart needs
       const dates: string[] = [];
-      for (let i = 6; i >= 0; i--) {
+      for (let i = 7; i >= 0; i--) {
         const date = getDateInTimezone(i, timezone);
         dates.push(date);
       }
       
-      // Fetch all daily logs for the past 7 days
+      // Fetch all daily logs for the past 8 days
       const { data: logs } = await client.models.DailyLog.list();
       
       // Group logs by date
@@ -698,232 +748,130 @@ export default function DailyActionTracker({
         </div>
 
         <div className="space-y-3">
-          {sortedActions.map((action, index) => {
+          {visibleActions.map((action, index) => {
             const count = getActionCount(action.id);
             const isEncourage = action.type === 'ENCOURAGE';
             const isComplete = isActionComplete(action, count);
             const isFlipped = flippedCards.has(action.id);
             
             return (
-              <div key={`${action.id}-${sortBy}-${sortCounter}-${index}`} className="relative overflow-hidden">
-                {/* Completion Animation */}
-                {completedActions.has(action.id) && (
-                  <div className="absolute inset-0 bg-gradient-to-r from-yellow-400 to-yellow-500 border border-yellow-600 rounded-lg flex items-center justify-center z-20 animate-slide-up">
-                    <div className="text-white font-bold text-lg drop-shadow-lg">
-                      Complete!
-                    </div>
-                  </div>
-                )}
-
-                <div className="relative h-24 perspective-1000">
-                  <motion.div 
-                    className="relative w-full h-full"
-                    style={{ 
-                      transformStyle: 'preserve-3d'
-                    }}
-                    animate={{ 
-                      rotateX: isFlipped ? 180 : 0 
-                    }}
-                    transition={{ 
-                      duration: 0.6,
-                      ease: "easeInOut"
-                    }}
-                    onClick={() => toggleCardFlip(action.id)}
-                  >
-                    {/* Front Side - Action Item */}
-                    <div
-                      className={`absolute inset-0 flex gap-3 items-stretch pl-7 pr-3 py-3 rounded-lg cursor-pointer ${
-                        isEncourage 
-                          ? 'bg-gray-50 dark:bg-gray-700' 
-                          : 'bg-gray-50 dark:bg-gray-700'
-                      }`}
-                      style={{ 
-                        backfaceVisibility: 'hidden',
-                        transform: 'rotateX(0deg)'
-                      }}
-                    >
-                      {/* Gradient border pseudo-element */}
-                      <div
-                        className="absolute left-0 top-0 bottom-0 w-4 rounded-l-lg"
-                        style={{
-                          background: isEncourage 
-                            ? 'linear-gradient(to bottom, #16a34a, #22c55e, #16a34a)' 
-                            : 'linear-gradient(to bottom, #9333ea, #a855f7, #9333ea)',
-                          zIndex: 1
-                        }}
-                      />
-                      <div className="flex-1 relative z-10">
-                        <div className="flex items-center gap-2 mb-1">
-                          {action.type === 'AVOID' && (
-                            <div className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300">
-                              avoid
-                            </div>
-                          )}
-                          <div className="font-medium text-gray-900 dark:text-white">
-                            {action.name}
-                          </div>
-                        </div>
-                        
-                        {action.description && (
-                          <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                            {action.description}
-                          </div>
-                        )}
-                        
-                        <div className="flex flex-wrap gap-2 text-xs">
-                          <div className="px-2 py-1 rounded bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-                            {action.progressPoints} pts
-                          </div>
-                          <div className="px-2 py-1 rounded bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-                            {action.frequency}
-                          </div>
-                          <div className="px-2 py-1 rounded bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-                            {action.timeOfDay}
-                          </div>
-                          <div className="px-2 py-1 rounded bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-                            Target: {action.targetCount}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center">
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            updateActionCount(action.id, true);
-                          }}
-                          disabled={updatingActions.has(action.id)}
-                          className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200 ${
-                                isComplete 
-                                  ? 'bg-gradient-to-t from-amber-400 to-yellow-300 text-gray-800' 
-                                  : 'bg-gradient-to-br from-gray-500 to-gray-600 text-white hover:from-gray-600 hover:to-gray-700'
-                              }`}
-                            >
-                              <div className="relative z-10">
-                                {updatingActions.has(action.id) ? (
-                                  <div className="w-full h-full flex items-center justify-center">
-                                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-                                  </div>
-                                ) : isComplete ? (
-                                  <div className="flex items-center justify-center">
-                                    {count === action.targetCount ? (
-                                      <svg className="w-5 h-5 text-gray-800" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                      </svg>
-                                    ) : (
-                                      <span className="text-sm font-bold text-gray-800">
-                                        {count}/{action.targetCount}
-                                      </span>
-                                    )}
-                                  </div>
-                                ) : count > 0 ? (
-                                  <div className="text-xs font-bold text-white">
-                                    {count}/{action.targetCount}
-                                  </div>
-                                ) : (
-                                  <div className="space-y-6">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                    </svg>
-                                  </div>
-                                )}
-                          </div>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Back Side - Management Options */}
-                    <div
-                      className={`absolute inset-0 flex items-center justify-between pl-7 pr-3 py-3 rounded-lg cursor-pointer ${
-                        isEncourage 
-                          ? 'bg-indigo-600' 
-                          : 'bg-indigo-600'
-                      }`}
-                      style={{ 
-                        backfaceVisibility: 'hidden',
-                        transform: 'rotateX(180deg)'
-                      }}
-                    >
-                      {/* Gradient border pseudo-element */}
-                      <div
-                        className="absolute left-0 top-0 bottom-0 w-4 rounded-l-lg"
-                        style={{
-                          background: isEncourage 
-                            ? 'linear-gradient(to bottom, #16a34a, #22c55e, #16a34a)' 
-                            : 'linear-gradient(to bottom, #9333ea, #a855f7, #9333ea)',
-                          zIndex: 1
-                        }}
-                      />
-                      <div className="flex-1 relative z-10">
-                      <div className="flex items-center gap-3">
-                        <div 
-                          className="p-2 rounded-lg text-white bg-indigo-400"
-                          title="Drag to reorder"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-                          </svg>
-                        </div>
-                        <div className="relative">
-                          <p className="font-semibold text-indigo-100 leading-none">
-                            {action.name}
-                          </p>
-                          <p className="text-sm text-indigo-200">Click to edit</p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handleViewHistory(action);
-                            }}
-                            className="p-2 rounded-lg text-white bg-indigo-400 hover:bg-indigo-500 transition-colors"
-                            title="View history"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handleEditAction(action);
-                            }}
-                            className="p-2 rounded-lg text-white bg-indigo-400 hover:bg-indigo-500 transition-colors"
-                            title="Edit action"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                            </svg>
-                          </button>
-                        </div>
-                        {count > 0 && (
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              updateActionCount(action.id, false);
-                            }}
-                            className="w-full p-2 rounded-lg text-white bg-indigo-400 hover:bg-indigo-500 transition-colors flex items-center justify-center"
-                            title="Decrement count"
-                          >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                              </svg>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </motion.div>
-                </div>
+              <div key={`${action.id}-${sortBy}-${sortCounter}-${index}`} className="relative">
+                <ActionItem
+                  action={action}
+                  count={count}
+                  isComplete={isComplete}
+                  isFlipped={isFlipped}
+                  isUpdating={updatingActions.has(action.id)}
+                  showCompletionAnimation={completedActions.has(action.id)}
+                  onToggleFlip={() => toggleCardFlip(action.id)}
+                  onUpdateCount={(increment) => updateActionCount(action.id, increment)}
+                  onViewHistory={() => handleViewHistory(action)}
+                  onEditAction={() => handleEditAction(action)}
+                />
               </div>
             );
           })}
+
+          {/* Expandable "See All" sections */}
+          {hiddenActions.length > 0 && (
+            <div className="space-y-3">
+              {sortBy === 'routine' && (
+                <div>
+                  <button
+                    onClick={() => setExpandedTimePeriods(prev => ({
+                      ...prev,
+                      'other-times': !prev['other-times']
+                    }))}
+                    className="w-full flex items-center justify-between p-3 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
+                  >
+                    <span>See All Other Times</span>
+                    <svg 
+                      className={`w-4 h-4 transition-transform ${expandedTimePeriods['other-times'] ? 'rotate-180' : ''}`}
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {expandedTimePeriods['other-times'] && (
+                    <div className="space-y-3">
+                      {hiddenActions.map((action, index) => {
+                        const count = getActionCount(action.id);
+                        const isComplete = isActionComplete(action, count);
+                        const isFlipped = flippedCards.has(action.id);
+                        
+                        return (
+                          <div key={`${action.id}-${sortBy}-${sortCounter}-hidden-${index}`} className="relative">
+                            <ActionItem
+                              action={action}
+                              count={count}
+                              isComplete={isComplete}
+                              isFlipped={isFlipped}
+                              isUpdating={updatingActions.has(action.id)}
+                              showCompletionAnimation={completedActions.has(action.id)}
+                              onToggleFlip={() => toggleCardFlip(action.id)}
+                              onUpdateCount={(increment) => updateActionCount(action.id, increment)}
+                              onViewHistory={() => handleViewHistory(action)}
+                              onEditAction={() => handleEditAction(action)}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {sortBy === 'incomplete' && (
+                <div>
+                  <button
+                    onClick={() => setExpandedTimePeriods(prev => ({
+                      ...prev,
+                      'completed': !prev['completed']
+                    }))}
+                    className="w-full flex items-center justify-between p-3 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
+                  >
+                    <span>See All Completed ({hiddenActions.length})</span>
+                    <svg 
+                      className={`w-4 h-4 transition-transform ${expandedTimePeriods['completed'] ? 'rotate-180' : ''}`}
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {expandedTimePeriods['completed'] && (
+                    <div className="space-y-3">
+                      {hiddenActions.map((action, index) => {
+                        const count = getActionCount(action.id);
+                        const isComplete = isActionComplete(action, count);
+                        const isFlipped = flippedCards.has(action.id);
+                        
+                        return (
+                          <div key={`${action.id}-${sortBy}-${sortCounter}-hidden-${index}`} className="relative">
+                            <ActionItem
+                              action={action}
+                              count={count}
+                              isComplete={isComplete}
+                              isFlipped={isFlipped}
+                              isUpdating={updatingActions.has(action.id)}
+                              showCompletionAnimation={completedActions.has(action.id)}
+                              onToggleFlip={() => toggleCardFlip(action.id)}
+                              onUpdateCount={(increment) => updateActionCount(action.id, increment)}
+                              onViewHistory={() => handleViewHistory(action)}
+                              onEditAction={() => handleEditAction(action)}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

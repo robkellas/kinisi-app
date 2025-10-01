@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { UserProfileProvider } from "@/components/UserProfileContext";
 import { SoundProvider } from "@/components/SoundContext";
+import { ThemeProvider } from "@/components/ThemeContext";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -30,30 +31,37 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              // Prevent flash of white by immediately applying dark mode
-              (function() {
-                const savedTheme = localStorage.getItem('kinisi_theme') || 'auto';
-                if (savedTheme === 'dark' || (savedTheme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                  document.documentElement.classList.add('dark');
-                } else {
+              // Prevent flash of white by immediately applying dark mode as default
+              // The ThemeProvider will correct this after hydration
+              try {
+                const savedTheme = localStorage.getItem('kinisi_theme');
+                if (savedTheme === 'light') {
                   document.documentElement.classList.remove('dark');
+                } else {
+                  // Default to dark for auto or dark theme
+                  document.documentElement.classList.add('dark');
                 }
-              })();
+              } catch (e) {
+                // Fallback to dark mode
+                document.documentElement.classList.add('dark');
+              }
             `,
           }}
         />
       </head>
       <body className={`${inter.className} antialiased bg-gray-50 dark:bg-gray-900`}>
-        <UserProfileProvider>
-          <SoundProvider>
-            {children}
-          </SoundProvider>
-        </UserProfileProvider>
+        <ThemeProvider>
+          <UserProfileProvider>
+            <SoundProvider>
+              {children}
+            </SoundProvider>
+          </UserProfileProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

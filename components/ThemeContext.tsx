@@ -12,16 +12,25 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => {
+  const [theme, setThemeState] = useState<Theme>('auto');
+  const [mounted, setMounted] = useState(false);
+
+  // Initialize theme after hydration
+  useEffect(() => {
+    setMounted(true);
     try {
       const storedTheme = window.localStorage.getItem('kinisi_theme');
-      return (storedTheme as Theme) || 'auto';
+      if (storedTheme) {
+        setThemeState(storedTheme as Theme);
+      }
     } catch {
-      return 'auto';
+      // Ignore localStorage errors
     }
-  });
+  }, []);
 
   useEffect(() => {
+    if (!mounted) return;
+
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
       window.localStorage.setItem('kinisi_theme', 'dark');
@@ -46,7 +55,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       darkThemeMq.addEventListener('change', handleChange);
       return () => darkThemeMq.removeEventListener('change', handleChange);
     }
-  }, [theme]);
+  }, [theme, mounted]);
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);
