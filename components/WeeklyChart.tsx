@@ -218,7 +218,7 @@ export default function WeeklyChart({
                     
                     {/* Bar - now clickable */}
                     <motion.button
-                      className={`${barClass} cursor-pointer hover:opacity-80 transition-opacity`}
+                      className={`${barClass} cursor-pointer ${!isHighlighted ? 'hover:opacity-80' : ''} transition-opacity`}
                       initial={{ height: 0 }}
                       animate={{ height: height }}
                       transition={{ 

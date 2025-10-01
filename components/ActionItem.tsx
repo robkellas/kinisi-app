@@ -59,44 +59,34 @@ export default function ActionItem({
       >
         {/* Front Side - Action Item */}
         <div
-          className={`absolute inset-0 flex gap-3 items-stretch pl-3 pr-3 py-3 rounded-lg cursor-pointer border-2 ${
+          className={`absolute inset-0 rounded-lg cursor-pointer border-2 ${
             isEncourage 
-              ? 'bg-gray-100 dark:bg-gray-700 border-indigo-600 border-l-[1rem]' 
-              : 'bg-gray-100 dark:bg-gray-700 border-purple-600 border-l-[1rem]'
+              ? 'bg-indigo-600 border-indigo-600' 
+              : 'bg-purple-600 border-purple-600'
           }`}
           style={{ 
             backfaceVisibility: 'hidden',
             transform: 'rotateX(0deg)'
           }}
         >
-          <div className="flex-1 relative z-10">
-            <div className="flex items-center gap-2 mb-1">
+          {/* Inner content area with gray background and rounded corners */}
+          <div className="absolute inset-y-0 left-[1rem] right-0 bg-gray-100 dark:bg-gray-700 rounded-lg flex gap-3 items-center px-[1rem] py-3">
+            <div className="flex-1">
+            <div className="font-semibold text-gray-900 dark:text-white leading-none">
               {action.type === 'AVOID' && (
-                <div className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300">
-                  avoid
-                </div>
+                <span className="text-purple-600 dark:text-purple-400">Avoid: </span>
               )}
-              <div className="font-medium text-gray-900 dark:text-white">
-                {action.name}
-              </div>
+              {action.name}
             </div>
             
-            {action.description && (
-              <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                {action.description}
-              </div>
-            )}
-            
-            <div className="flex flex-wrap gap-2 text-xs">
-              <div className="px-2 py-1 rounded bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-                {action.progressPoints} pts
-              </div>
-              <div className="px-2 py-1 rounded bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-                {action.timeOfDay}
-              </div>
+            <div className="text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+              <span className="font-medium text-yellow-600 dark:text-yellow-500">{action.progressPoints} pts</span>
+              {action.description && (
+                <span> · {action.description}</span>
+              )}
             </div>
           </div>
-          
+            
           <div className="flex items-center">
             <button
               onClick={(e) => {
@@ -123,39 +113,33 @@ export default function ActionItem({
                     )}
                   </div>
                 </button>
-            </div>
           </div>
+        </div>
+      </div>
 
           {/* Back Side - Management Options */}
           <div
-            className={`absolute inset-0 flex items-center justify-between pl-3 pr-3 py-3 rounded-lg cursor-pointer border-2 ${
+            className={`absolute inset-0 rounded-lg cursor-pointer border-2 ${
               isEncourage 
-                ? 'bg-gray-100 dark:bg-gray-700 border-indigo-600 border-l-[1rem]' 
-                : 'bg-gray-100 dark:bg-gray-700 border-purple-600 border-l-[1rem]'
+                ? 'bg-indigo-600 border-indigo-600' 
+                : 'bg-purple-600 border-purple-600'
             }`}
             style={{ 
               backfaceVisibility: 'hidden',
               transform: 'rotateX(180deg)'
             }}
           >
-            <div className="flex items-center gap-3">
-              <div 
-                className={`p-2 rounded-lg text-white ${
-                  isEncourage ? 'bg-indigo-600' : 'bg-purple-600'
-                }`}
-                title="Drag to reorder"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-                </svg>
-              </div>
+            {/* Inner content area - keeps the colored background, no gray needed */}
+            <div className="absolute inset-y-0 left-[1rem] right-0 flex items-center justify-between px-3 py-3">
+              <div className="flex items-center gap-3">
               <div className="relative">
-                <p className="font-semibold text-gray-900 dark:text-white leading-none">
+                <p className="font-semibold text-white leading-none">
+                  {action.type === 'AVOID' && <span>Avoid: </span>}
                   {action.name}
                 </p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">Click to edit</p>
+                <p className="text-sm text-white/80">View history or edit</p>
               </div>
-              </div>
+            </div>
             <div className="flex flex-col items-end gap-2">
               <div className="flex items-center gap-2">
                 <button
@@ -164,11 +148,7 @@ export default function ActionItem({
                     e.stopPropagation();
                     onViewHistory();
                   }}
-                  className={`p-2 rounded-lg text-white transition-colors ${
-                    isEncourage 
-                      ? 'bg-indigo-600 hover:bg-indigo-700' 
-                      : 'bg-purple-600 hover:bg-purple-700'
-                  }`}
+                  className="p-2 rounded-lg text-white bg-white/20 hover:bg-white/30 transition-colors"
                   title="View history"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -181,11 +161,7 @@ export default function ActionItem({
                     e.stopPropagation();
                     onEditAction();
                   }}
-                  className={`p-2 rounded-lg text-white transition-colors ${
-                    isEncourage 
-                      ? 'bg-indigo-600 hover:bg-indigo-700' 
-                      : 'bg-purple-600 hover:bg-purple-700'
-                  }`}
+                  className="p-2 rounded-lg text-white bg-white/20 hover:bg-white/30 transition-colors"
                   title="Edit action"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -201,11 +177,7 @@ export default function ActionItem({
                     onUpdateCount(false);
                   }}
                   disabled={count === 0 || isUpdating}
-                  className={`w-full p-2 rounded-lg text-white transition-colors flex items-center justify-center ${
-                    isEncourage 
-                      ? 'bg-indigo-600 hover:bg-indigo-700' 
-                      : 'bg-purple-600 hover:bg-purple-700'
-                  }`}
+                  className="w-full p-2 rounded-lg text-white bg-white/20 hover:bg-white/30 transition-colors flex items-center justify-center"
                   title="Decrement count"
                 >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -213,8 +185,9 @@ export default function ActionItem({
                     </svg>
                 </button>
               )}
-            </div>
           </div>
+        </div>
+      </div>
         </motion.div>
       </div>
     );
