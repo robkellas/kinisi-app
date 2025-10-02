@@ -68,4 +68,18 @@ body {
 
 /* Framer Motion handles all animations now */
 
+/* Fix for ActionItem rendering issues */
+.perspective-1000 {
+  perspective: 1000px;
+  transform-style: preserve-3d;
+  will-change: transform;
+  backface-visibility: visible;
+}
+
+/* Ensure ActionItems are always rendered */
+.action-item {
+  contain: layout style paint;
+  will-change: transform;
+}
+
 /* Clean CSS - No more Amplify overrides needed! */
