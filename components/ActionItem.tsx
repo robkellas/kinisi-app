@@ -66,11 +66,13 @@ export default function ActionItem({
   const grayColor = isDarkMode ? 'rgb(107 114 128)' : 'rgb(209 213 219)';
 
   return (
-    <div className="relative h-24 perspective-1000">
+    <div className="relative h-24 perspective-1000 action-item">
       <motion.div 
         className="relative w-full h-full"
         style={{ 
-          transformStyle: 'preserve-3d'
+          transformStyle: 'preserve-3d',
+          willChange: 'transform',
+          backfaceVisibility: 'visible'
         }}
         animate={{ 
           rotateX: isFlipped ? 180 : 0 

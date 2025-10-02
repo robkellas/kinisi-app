@@ -10,6 +10,7 @@ import AddActionModal from './AddActionModal';
 import HistoryModal from './HistoryModal';
 import ActionItem from './ActionItem';
 import FlippableScoreChart from './FlippableScoreChart';
+import SettingsModal from './SettingsModal';
 import { useSound } from './SoundContext';
 import { ANIMATION_CLASSES } from '@/lib/animations';
 import { getTodayInTimezone, getDateInTimezone, getYesterdayInTimezone } from '@/lib/dateUtils';
@@ -34,13 +35,15 @@ interface DailyActionTrackerProps {
   onDataUpdate: () => void;
   onCreateAction: (actionData: Omit<Action, 'id' | 'completed' | 'completedAt' | 'createdAt'>) => void;
   user?: any; // Add user prop to check authentication
+  onSignOut?: () => void;
 }
 
 export default function DailyActionTracker({ 
   actions, 
   onDataUpdate, 
   onCreateAction,
-  user
+  user,
+  onSignOut
 }: DailyActionTrackerProps) {
   // Don't render anything if user is not authenticated
   if (!user) {
@@ -92,6 +95,8 @@ export default function DailyActionTracker({
   
   const [showFilters, setShowFilters] = useState(false);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showProfileDrawer, setShowProfileDrawer] = useState(false);
   
   // Filter state
   const [activeFilters, setActiveFilters] = useState(() => {
@@ -395,6 +400,12 @@ export default function DailyActionTracker({
       const dateString = getDateInTimezone(newDaysBack, timezone);
       setSelectedDate(dateString);
     }
+  };
+
+  const goToToday = () => {
+    setDaysBack(0);
+    const todayDate = getTodayInTimezone(timezone);
+    setSelectedDate(todayDate);
   };
 
   const handleDateSelect = (date: string) => {
@@ -757,29 +768,41 @@ export default function DailyActionTracker({
       <div className="p-0">
         {/* Day Navigation */}
         <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-4 w-48">
-        <button
-          onClick={goBackOneDay}
-          disabled={daysBack >= 7}
-          className="p-2 rounded-lg bg-gray-100 text-gray-600 dark:text-gray-100 dark:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-600"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 text-center flex-1">
-              {dateLabel}
-          </h2>
-        <button
-          onClick={goForwardOneDay}
-          disabled={daysBack <= 0}
-          className="p-2 rounded-lg bg-gray-100 text-gray-600 dark:text-gray-100 dark:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-200 dark:hover:bg-gray-600"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
-      </div>
+          {/* Day Picker - Connected Button Group */}
+          <div className="flex items-center w-40">
+            {/* Previous Day Button */}
+            <button
+              onClick={goBackOneDay}
+              disabled={daysBack >= 7}
+              className="px-3 py-2 text-xs font-medium rounded-l-lg border-r-0 bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
+              title="Previous day"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            
+            {/* Today/Day Button */}
+            <button
+              onClick={goToToday}
+              className="px-3 py-2 text-xs font-medium border-l-0 border-r-0 bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all duration-150 cursor-pointer flex-1 min-w-0 flex items-center justify-center"
+              title={`Go to today (currently: ${dateLabel})`}
+            >
+              <span className="truncate">{dateLabel}</span>
+            </button>
+            
+            {/* Next Day Button */}
+            <button
+              onClick={goForwardOneDay}
+              disabled={daysBack <= 0}
+              className="px-3 py-2 text-xs font-medium rounded-r-lg border-l-0 bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150"
+              title="Next day"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
           <div className="flex items-center gap-2">
             {/* Sort Controls - Custom Dropdown + Arrow */}
             <div className="flex items-center">
@@ -856,16 +879,6 @@ export default function DailyActionTracker({
               </svg>
             </button>
             
-            {/* Add Button */}
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="p-2 rounded-lg bg-gray-100 text-gray-600 dark:text-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 active:bg-gray-800 active:scale-95 transition-all duration-150 cursor-pointer hover:bg-gray-200"
-            title="Add action"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
         </div>
                     </div>
 
@@ -1031,6 +1044,139 @@ export default function DailyActionTracker({
         )}
 
       </div>
+
+      {/* Mobile Bottom Navigation */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 z-50">
+        <div className="flex items-center justify-around py-2 px-4">
+          {/* Dashboard */}
+          <button className="flex flex-col items-center gap-1 p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v6H8V5z" />
+            </svg>
+            <span className="text-xs font-medium">Dashboard</span>
+          </button>
+
+          {/* Analytics */}
+          <button className="flex flex-col items-center gap-1 p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <span className="text-xs font-medium">Analytics</span>
+          </button>
+
+          {/* Add Action - Primary Button */}
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex flex-col items-center gap-1 p-3 bg-gradient-to-t from-amber-400 to-yellow-300 hover:from-amber-500 hover:to-yellow-400 text-white rounded-full shadow-lg transition-all duration-200"
+          >
+            <svg className="w-6 h-6 text-gray-900 dark:text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+
+          {/* Settings */}
+          <button 
+            onClick={() => setShowSettings(true)}
+            className="flex flex-col items-center gap-1 p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
+            </svg>
+            <span className="text-xs font-medium">Settings</span>
+          </button>
+
+          {/* Profile */}
+          <button 
+            onClick={() => setShowProfileDrawer(true)}
+            className="flex flex-col items-center gap-1 p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+          >
+            <div className="w-5 h-5 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center">
+              <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                {user?.username?.charAt(0).toUpperCase() || 'U'}
+              </span>
+            </div>
+            <span className="text-xs font-medium">Profile</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <SettingsModal 
+          isOpen={showSettings} 
+          onClose={() => setShowSettings(false)} 
+        />
+      )}
+
+      {/* Profile Bottom Drawer */}
+      {showProfileDrawer && (
+        <div className="lg:hidden fixed inset-0 z-50">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black bg-opacity-50"
+            onClick={() => setShowProfileDrawer(false)}
+          />
+          
+          {/* Drawer */}
+          <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl shadow-2xl transform transition-transform duration-300 ease-out">
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-12 h-1 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6">
+              {/* Header */}
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center">
+                  <span className="text-2xl font-bold text-amber-600 dark:text-amber-400">
+                    {user?.username?.charAt(0).toUpperCase() || 'U'}
+                  </span>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                    {user?.username || 'User'}
+                  </h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Free Plan</p>
+                </div>
+              </div>
+              
+              {/* Actions */}
+              <div className="space-y-3">
+                <button className="w-full flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+                  <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span className="text-gray-900 dark:text-white font-medium">Edit Profile</span>
+                </button>
+                
+                <button className="w-full flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+                  <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-gray-900 dark:text-white font-medium">Upgrade Plan</span>
+                </button>
+                
+                {onSignOut && (
+                  <button 
+                    onClick={() => {
+                      setShowProfileDrawer(false);
+                      onSignOut();
+                    }}
+                    className="w-full flex items-center gap-3 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                  >
+                    <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    <span className="text-red-600 dark:text-red-400 font-medium">Sign Out</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       </>
     );
   }
