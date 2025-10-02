@@ -176,7 +176,7 @@ export default function ActionItem({
                       boxShadow: { duration: 0.4, ease: "easeOut", delay: isComplete && animateCompletion ? 0.5 : 0 }
                     }}
                   whileHover={{ scale: isUpdating ? 1 : 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+                  whileTap={{ scale: 0.85 }}
                 >
                     <motion.div 
                       className={`w-12 h-12 rounded-full flex items-center justify-center relative z-10 ${
@@ -194,11 +194,7 @@ export default function ActionItem({
                           background: { duration: 0.3, ease: "easeOut", delay: isComplete && animateCompletion ? 0.5 : 0 }
                         }}
                   >
-                    {isUpdating ? (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      </div>
-                    ) : count > targetCount ? (
+                    {count > targetCount ? (
                       <div className="text-base font-bold text-center leading-none flex items-center justify-center w-full h-full">
                         {targetCount > 1 ? `${count}/${targetCount}` : `${count}x`}
                       </div>

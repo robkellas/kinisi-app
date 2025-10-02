@@ -82,6 +82,17 @@ export default function DailyActionTracker({
     return 'desc';
   });
   
+  const [sortBy, setSortBy] = useState<'points' | 'routine'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('kinisi-sort-by');
+      return (saved as 'points' | 'routine') || 'points';
+    }
+    return 'points';
+  });
+  
+  const [showFilters, setShowFilters] = useState(false);
+  const [showSortDropdown, setShowSortDropdown] = useState(false);
+  
   // Filter state
   const [activeFilters, setActiveFilters] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -118,6 +129,13 @@ export default function DailyActionTracker({
     }
   }, [sortOrder]);
 
+  // Save sort by to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('kinisi-sort-by', sortBy);
+    }
+  }, [sortBy]);
+
   // Force selectedDate to today on component mount
   useEffect(() => {
     const today = getTodayInTimezone(timezone);
@@ -144,7 +162,25 @@ export default function DailyActionTracker({
         times: needsTimeUpdate ? Array.from(new Set([...prev.times, ...availableTimes])) : prev.times
       }));
     }
-  }, [actions, activeFilters.types, activeFilters.times]);
+  }, [actions]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showSortDropdown) {
+        const target = event.target as Element;
+        // Check if click is outside the dropdown
+        if (!target.closest('[data-dropdown="sort"]')) {
+          setShowSortDropdown(false);
+        }
+      }
+    };
+
+    if (showSortDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showSortDropdown]);
 
   // Get current date based on days back
   const getCurrentDate = () => {
@@ -495,13 +531,33 @@ export default function DailyActionTracker({
       return true;
     });
 
-    // Then, sort by points
+    // Then, sort by selected criteria
     return filtered.sort((a, b) => {
-      const aPoints = a.progressPoints || 0;
-      const bPoints = b.progressPoints || 0;
-      return sortOrder === 'desc' ? bPoints - aPoints : aPoints - bPoints;
+      if (sortBy === 'points') {
+        const aPoints = a.progressPoints || 0;
+        const bPoints = b.progressPoints || 0;
+        return sortOrder === 'desc' ? bPoints - aPoints : aPoints - bPoints;
+      } else {
+        // Sort by routine (time of day)
+        const aTime = a.timeOfDay || 'ANYTIME';
+        const bTime = b.timeOfDay || 'ANYTIME';
+        
+        // Define time order
+        const timeOrder = ['MORNING', 'AFTERNOON', 'EVENING', 'ANYTIME'];
+        const aIndex = timeOrder.indexOf(aTime);
+        const bIndex = timeOrder.indexOf(bTime);
+        
+        if (aIndex !== bIndex) {
+          return sortOrder === 'desc' ? bIndex - aIndex : aIndex - bIndex;
+        }
+        
+        // If same time, sort by points as secondary criteria
+        const aPoints = a.progressPoints || 0;
+        const bPoints = b.progressPoints || 0;
+        return sortOrder === 'desc' ? bPoints - aPoints : aPoints - bPoints;
+      }
     });
-  }, [actions, timezone, selectedDate, logsCache, activeFilters, sortOrder]);
+  }, [actions, timezone, selectedDate, logsCache, activeFilters, sortOrder, sortBy]);
 
 
   // Load all weekly data at once and cache it (only once on mount)
@@ -725,19 +781,78 @@ export default function DailyActionTracker({
         </button>
       </div>
           <div className="flex items-center gap-2">
-            {/* Sort Dropdown */}
-            {/* Sort Button */}
+            {/* Sort Controls - Custom Dropdown + Arrow */}
+            <div className="flex items-center">
+              {/* Sort By Custom Dropdown */}
+              <div className="relative" data-dropdown="sort">
+                <button
+                  onClick={() => setShowSortDropdown(!showSortDropdown)}
+                  className="px-3 py-2 text-xs font-medium rounded-l-lg border-r-0 bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all duration-150 cursor-pointer flex items-center gap-1"
+                  title="Choose sort criteria"
+                >
+                  <span>{sortBy === 'points' ? 'Points' : 'Routine'}</span>
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                
+                {/* Dropdown Menu */}
+                {showSortDropdown && (
+                  <div className="absolute top-full left-0 mt-1 w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg z-50">
+                    <button
+                      onClick={() => {
+                        setSortBy('points');
+                        setShowSortDropdown(false);
+                      }}
+                      className={`w-full px-3 py-2 text-xs text-left hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors ${
+                        sortBy === 'points' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      Points
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSortBy('routine');
+                        setShowSortDropdown(false);
+                      }}
+                      className={`w-full px-3 py-2 text-xs text-left hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors ${
+                        sortBy === 'routine' ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300' : 'text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      Routine
+                    </button>
+                  </div>
+                )}
+              </div>
+              
+              {/* Sort Order Arrow */}
+              <button
+                onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                className="px-3 py-2 rounded-r-lg border-l-0 transition-all duration-150 cursor-pointer flex items-center justify-center bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                title={`Sort ${sortOrder === 'desc' ? 'descending' : 'ascending'}. Click to sort ${sortOrder === 'desc' ? 'ascending' : 'descending'}.`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                  {sortOrder === 'desc' ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" />
+                  )}
+                </svg>
+              </button>
+            </div>
+            
+            {/* Filter Toggle */}
             <button
-              onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
-              className="p-2 rounded-lg bg-gray-100 text-gray-600 dark:text-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 active:bg-gray-800 active:scale-95 transition-all duration-150 cursor-pointer hover:bg-gray-200"
-              title={`Sort ${sortOrder === 'desc' ? 'descending' : 'ascending'}`}
+              onClick={() => setShowFilters(prev => !prev)}
+              className={`p-2 rounded-lg transition-all duration-150 ${
+                showFilters 
+                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' 
+                  : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+              }`}
+              title="Toggle filters"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                {sortOrder === 'desc' ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                )}
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.414A1 1 0 013 6.707V4z" />
               </svg>
             </button>
             
@@ -754,8 +869,9 @@ export default function DailyActionTracker({
         </div>
                     </div>
 
-        {/* Filter UI - Always visible */}
-        <div className="space-y-2 mb-4">
+        {/* Filter UI - Collapsible */}
+        {showFilters && (
+          <div className="space-y-2 mb-4">
           {/* Routine Filters */}
           {availableFilters.times.length > 0 && (
             <div className="flex gap-2">
@@ -781,9 +897,9 @@ export default function DailyActionTracker({
                     {time.charAt(0) + time.slice(1).toLowerCase()}
                   </button>
                 ))}
-                          </div>
-                          </div>
-                        )}
+              </div>
+            </div>
+          )}
                         
           {/* Status Filters */}
           {availableFilters.statuses.length > 0 && (
@@ -826,6 +942,7 @@ export default function DailyActionTracker({
                     </div>
           )}
                   </div>
+        )}
 
         <div className="space-y-3">
           {filteredActions.map((action, index) => {
