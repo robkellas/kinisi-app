@@ -70,6 +70,7 @@ export default function DailyActionTracker({
   const [showConfetti, setShowConfetti] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [flippedCards, setFlippedCards] = useState<Set<string>>(new Set());
+  const [recentlyCompleted, setRecentlyCompleted] = useState<Set<string>>(new Set());
   const [editingAction, setEditingAction] = useState<Action | null>(null);
   const [historyAction, setHistoryAction] = useState<Action | null>(null);
   const [hasLoadedWeeklyData, setHasLoadedWeeklyData] = useState(false);
@@ -124,6 +125,27 @@ export default function DailyActionTracker({
     setDaysBack(0);
   }, []); // Run once on mount
 
+  // Auto-update filters when new actions are added with new categories
+  useEffect(() => {
+    if (actions.length === 0) return;
+
+    // Get all unique types and times from current actions
+    const availableTypes = Array.from(new Set(actions.map(action => action.type).filter(Boolean)));
+    const availableTimes = Array.from(new Set(actions.map(action => action.timeOfDay).filter(Boolean)));
+
+    // Check if we need to update filters
+    const needsTypeUpdate = availableTypes.some(type => !activeFilters.types.includes(type));
+    const needsTimeUpdate = availableTimes.some(time => !activeFilters.times.includes(time));
+
+    if (needsTypeUpdate || needsTimeUpdate) {
+      setActiveFilters((prev: typeof activeFilters) => ({
+        ...prev,
+        types: needsTypeUpdate ? Array.from(new Set([...prev.types, ...availableTypes])) : prev.types,
+        times: needsTimeUpdate ? Array.from(new Set([...prev.times, ...availableTimes])) : prev.times
+      }));
+    }
+  }, [actions, activeFilters.types, activeFilters.times]);
+
   // Get current date based on days back
   const getCurrentDate = () => {
     return getDateInTimezone(daysBack, timezone);
@@ -138,7 +160,7 @@ export default function DailyActionTracker({
 
   // Check if action is complete
   const isActionComplete = (action: Action, count: number) => {
-    return count >= (action.targetCount || 0);
+    return count >= (action.targetCount || 1);
   };
 
   // Get current time of day based on user's timezone
@@ -196,6 +218,44 @@ export default function DailyActionTracker({
       
       console.log('Updating action count:', { actionId, currentDate, newCount, increment });
       
+      // Set animation trigger BEFORE updating cache to prevent flash
+      if (increment && newCount >= (action.targetCount || 0)) {
+        setCompletedActions(prev => new Set(prev).add(actionId));
+        setRecentlyCompleted(prev => new Set(prev).add(actionId));
+        setShowConfetti(true);
+        playCompletionSound(); // Play completion sound
+        
+        setTimeout(() => {
+          setCompletedActions(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(actionId);
+            return newSet;
+          });
+          setShowConfetti(false); // Hide confetti after animation
+        }, 1500);
+        
+        // Clear recently completed after animation completes
+        setTimeout(() => {
+          setRecentlyCompleted(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(actionId);
+            return newSet;
+          });
+        }, 1000); // Clear after 1 second (animation duration)
+      } else if (increment && (action.targetCount || 0) > 1) {
+        // For milestone actions, animate on every progression step
+        setRecentlyCompleted(prev => new Set(prev).add(actionId));
+        
+        // Clear recently completed after animation completes
+        setTimeout(() => {
+          setRecentlyCompleted(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(actionId);
+            return newSet;
+          });
+        }, 1000); // Clear after 1 second (animation duration)
+      }
+
       // Update local cache immediately for instant UI response
       const updatedLog: DailyLog = existingLog 
         ? { ...existingLog, count: newCount, points: (action.progressPoints || 0) * newCount }
@@ -249,22 +309,8 @@ export default function DailyActionTracker({
         // Could implement retry logic here if needed
       }
       
-      // Handle completion animations and sounds
-      if (increment && newCount >= (action.targetCount || 0)) {
-        setCompletedActions(prev => new Set(prev).add(actionId));
-        setShowConfetti(true);
-        playCompletionSound(); // Play completion sound
-        
-        setTimeout(() => {
-          setCompletedActions(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(actionId);
-            return newSet;
-          });
-          setShowConfetti(false); // Hide confetti after animation
-        }, 1500);
-      } else if (increment && newCount === (action.targetCount || 0) - 1) {
-        // Play pre-completion sound when one away from target
+      if (increment && (action.targetCount || 0) > 1 && newCount < (action.targetCount || 0)) {
+        // Play pre-completion sound for milestone actions before each step
         playPreCompletionSound();
       } else if (!increment) {
         setCompletedActions(prev => {
@@ -535,6 +581,11 @@ export default function DailyActionTracker({
     }
   }, [user]);
 
+  // Clear recently completed when switching days
+  useEffect(() => {
+    setRecentlyCompleted(new Set());
+  }, [selectedDate]);
+
   // Note: selectedDate is now updated directly in navigation functions to prevent sync issues
 
   // Calculate score summary with memoization
@@ -782,6 +833,12 @@ export default function DailyActionTracker({
             const isEncourage = action.type === 'ENCOURAGE';
             const isComplete = isActionComplete(action, count);
             const isFlipped = flippedCards.has(action.id);
+            const targetCount = action.targetCount || 1;
+            const progressPercentage = Math.min(100, (count / targetCount) * 100);
+            
+            // Calculate previous progress percentage for animation
+            const previousCount = Math.max(0, count - 1);
+            const previousProgressPercentage = Math.min(100, (previousCount / targetCount) * 100);
             
             return (
               <div key={`${action.id}-${sortOrder}-${index}`} className="relative">
@@ -791,7 +848,10 @@ export default function DailyActionTracker({
                   isComplete={isComplete}
                   isFlipped={isFlipped}
                   isUpdating={updatingActions.has(action.id)}
-                  showCompletionAnimation={completedActions.has(action.id)}
+                  targetCount={targetCount}
+                  progressPercentage={progressPercentage}
+                  previousProgressPercentage={previousProgressPercentage}
+                  animateCompletion={recentlyCompleted.has(action.id)}
                   onToggleFlip={() => toggleCardFlip(action.id)}
                   onUpdateCount={(increment) => updateActionCount(action.id, increment)}
                   onViewHistory={() => handleViewHistory(action)}

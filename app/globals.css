@@ -65,3 +65,7 @@ body {
 .animate-slide-up {
   animation: slide-up 0.4s ease-in-out;
 }
+
+/* Framer Motion handles all animations now */
+
+/* Clean CSS - No more Amplify overrides needed! */
