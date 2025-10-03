@@ -13,6 +13,8 @@ export default function CustomAuth({ onAuthSuccess }: CustomAuthProps) {
   const [isConfirming, setIsConfirming] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [confirmCode, setConfirmCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -50,6 +52,8 @@ export default function CustomAuth({ onAuthSuccess }: CustomAuthProps) {
         options: {
           userAttributes: {
             email: email,
+            given_name: firstName,
+            family_name: lastName,
           },
         },
       });
@@ -199,6 +203,52 @@ export default function CustomAuth({ onAuthSuccess }: CustomAuthProps) {
               </div>
             </div>
           </div>
+
+          {isSignUp && (
+            <>
+              <div>
+                <label htmlFor="firstName" className="block text-sm/6 font-medium text-gray-900 dark:text-white">
+                  First Name
+                </label>
+                <div className="mt-2">
+                  <div className="flex items-center rounded-md bg-gray-50 dark:bg-gray-700 pl-3 outline outline-1 -outline-offset-1 outline-gray-300 dark:outline-gray-600 has-[input:focus-within]:outline has-[input:focus-within]:outline-2 has-[input:focus-within]:-outline-offset-2 has-[input:focus-within]:outline-amber-500">
+                    <input
+                      id="firstName"
+                      name="firstName"
+                      type="text"
+                      autoComplete="given-name"
+                      required
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      placeholder="Enter your first name"
+                      className="block min-w-0 grow bg-transparent py-1.5 pl-1 pr-3 text-base text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:outline focus:outline-0 sm:text-sm/6"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="lastName" className="block text-sm/6 font-medium text-gray-900 dark:text-white">
+                  Last Name
+                </label>
+                <div className="mt-2">
+                  <div className="flex items-center rounded-md bg-gray-50 dark:bg-gray-700 pl-3 outline outline-1 -outline-offset-1 outline-gray-300 dark:outline-gray-600 has-[input:focus-within]:outline has-[input:focus-within]:outline-2 has-[input:focus-within]:-outline-offset-2 has-[input:focus-within]:outline-amber-500">
+                    <input
+                      id="lastName"
+                      name="lastName"
+                      type="text"
+                      autoComplete="family-name"
+                      required
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      placeholder="Enter your last name"
+                      className="block min-w-0 grow bg-transparent py-1.5 pl-1 pr-3 text-base text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:outline focus:outline-0 sm:text-sm/6"
+                    />
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
 
           <div>
             <label htmlFor="password" className="block text-sm/6 font-medium text-gray-900 dark:text-white">

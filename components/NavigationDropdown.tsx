@@ -118,7 +118,7 @@ export default function NavigationDropdown({ onSignOut }: NavigationDropdownProp
               {/* Footer */}
               <div className="px-3 py-2 border-t border-gray-200 dark:border-gray-700">
                 <div className="text-xs text-gray-500 dark:text-gray-400">
-                  Version 1.0.0
+                  Version 0.1.3
                 </div>
               </div>
             </div>

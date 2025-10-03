@@ -13,9 +13,13 @@ interface UserProfileContextType {
   timezone: string;
   theme: 'light' | 'dark' | 'auto';
   displayName?: string;
+  firstName: string;
+  lastName: string;
   setTimezone: (timezone: string) => void;
   setTheme: (theme: 'light' | 'dark' | 'auto') => void;
   setDisplayName: (displayName: string) => void;
+  setFirstName: (firstName: string) => void;
+  setLastName: (lastName: string) => void;
   isLoading: boolean;
   userProfile?: Schema["UserProfile"]["type"];
 }
@@ -101,20 +105,122 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
   const loadUserProfile = async () => {
     try {
       setIsLoading(true);
-      const { data: profiles } = await client.models.UserProfile.list();
+      
+      // Check if user is authenticated before making the call
+      try {
+        const { getCurrentUser } = await import('aws-amplify/auth');
+        const user = await getCurrentUser();
+      } catch (authError) {
+        console.error('User not authenticated:', authError);
+        throw new Error('User not authenticated');
+      }
+      
+      let { data: profiles, errors } = await client.models.UserProfile.list();
+      
+      if (errors && errors.length > 0) {
+        // Check if this is the null firstName/lastName error
+        const hasNullFieldErrors = errors.some(e => 
+          e.message.includes('Cannot return null for non-nullable type') && 
+          (e.message.includes('firstName') || e.message.includes('lastName'))
+        );
+        
+        if (hasNullFieldErrors) {
+          // Check if we have any valid profiles in the data despite the errors
+          if (profiles && profiles.length > 0) {
+            const validProfile = profiles.find(profile => 
+              profile && profile.firstName && profile.lastName && 
+              profile.firstName !== null && profile.lastName !== null
+            );
+            
+            if (validProfile) {
+              setUserProfile(validProfile);
+              return; // Exit early since we've set the profile
+            }
+          }
+          
+          // If we get here, no valid profiles were found, so create a new one
+          const { data: newProfile, errors: createErrors } = await client.models.UserProfile.create({
+            firstName: 'User',
+            lastName: 'Name',
+            timezone: 'America/Los_Angeles',
+            theme: 'auto',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+          
+          if (createErrors && createErrors.length > 0) {
+            console.error('Error creating new profile:', createErrors);
+            throw new Error(`Failed to create profile: ${createErrors.map(e => e.message).join(', ')}`);
+          }
+          
+          if (newProfile) {
+            setUserProfile(newProfile);
+            return; // Exit early since we've set the profile
+          } else {
+            throw new Error('Profile creation returned null/undefined');
+          }
+        } else {
+          throw new Error(`Failed to list profiles: ${errors.map(e => e.message).join(', ')}`);
+        }
+      }
       
       if (profiles.length > 0) {
-        setUserProfile(profiles[0]);
+        const profile = profiles[0];
+        
+        // Check if the profile has valid firstName/lastName (not null)
+        if (profile && profile.firstName && profile.lastName) {
+          setUserProfile(profile);
+        } else {
+          // Delete the corrupted profile and create a new one
+          try {
+            if (profile?.id && profile.id !== 'default') {
+              await client.models.UserProfile.delete({ id: profile.id });
+            }
+          } catch (deleteError) {
+            console.error('Error deleting corrupted profile:', deleteError);
+          }
+          
+          // Create a new profile
+          const { data: newProfile, errors: createErrors } = await client.models.UserProfile.create({
+            firstName: 'User',
+            lastName: 'Name',
+            timezone: 'America/Los_Angeles',
+            theme: 'auto',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+          
+          if (createErrors && createErrors.length > 0) {
+            console.error('Errors creating profile:', createErrors);
+            throw new Error(`Failed to create profile: ${createErrors.map(e => e.message).join(', ')}`);
+          }
+          
+          if (newProfile) {
+            setUserProfile(newProfile);
+          } else {
+            throw new Error('Profile creation returned null/undefined');
+          }
+        }
       } else {
         // Create default profile if none exists
-        const { data: newProfile } = await client.models.UserProfile.create({
+        const { data: newProfile, errors: createErrors } = await client.models.UserProfile.create({
+          firstName: 'User',
+          lastName: 'Name',
           timezone: 'America/Los_Angeles',
           theme: 'auto',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });
+        
+        if (createErrors && createErrors.length > 0) {
+          console.error('Errors creating profile:', createErrors);
+          throw new Error(`Failed to create profile: ${createErrors.map(e => e.message).join(', ')}`);
+        }
+        
         if (newProfile) {
           setUserProfile(newProfile);
+        } else {
+          throw new Error('Profile creation returned null/undefined');
         }
       }
     } catch (error) {
@@ -122,6 +228,8 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
       // Fallback to default values
       setUserProfile({
         id: 'default',
+        firstName: 'User',
+        lastName: 'Name',
         timezone: 'America/Los_Angeles',
         theme: 'auto',
         createdAt: new Date().toISOString(),
@@ -134,7 +242,45 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
 
   const updateUserProfile = async (updates: Partial<Schema["UserProfile"]["type"]>) => {
     try {
-      if (!userProfile) return;
+      if (!userProfile) {
+        // Try to reload the profile
+        await loadUserProfile();
+        
+        // If still no profile after reload, return
+        if (!userProfile) {
+          return;
+        }
+      }
+
+      // Check if this is the fallback profile (which doesn't exist in database)
+      if (userProfile.id === 'default') {
+        const { data: newProfile, errors: createErrors } = await client.models.UserProfile.create({
+          firstName: userProfile.firstName,
+          lastName: userProfile.lastName,
+          timezone: userProfile.timezone,
+          theme: userProfile.theme,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        
+        if (createErrors && createErrors.length > 0) {
+          console.error('Errors creating profile:', createErrors);
+          throw new Error(`Failed to create profile: ${createErrors.map(e => e.message).join(', ')}`);
+        }
+        
+        if (newProfile) {
+          const { data: updatedProfile } = await client.models.UserProfile.update({
+            id: newProfile.id,
+            ...updates,
+            updatedAt: new Date().toISOString(),
+          });
+          
+          if (updatedProfile) {
+            setUserProfile(updatedProfile);
+          }
+        }
+        return;
+      }
 
       const { data: updatedProfile } = await client.models.UserProfile.update({
         id: userProfile.id,
@@ -162,13 +308,25 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
     updateUserProfile({ displayName });
   };
 
+  const setFirstName = (firstName: string) => {
+    updateUserProfile({ firstName });
+  };
+
+  const setLastName = (lastName: string) => {
+    updateUserProfile({ lastName });
+  };
+
   const contextValue: UserProfileContextType = {
     timezone: userProfile?.timezone || 'America/Los_Angeles',
     theme: userProfile?.theme || 'auto',
     displayName: userProfile?.displayName || undefined,
+    firstName: userProfile?.firstName || 'User',
+    lastName: userProfile?.lastName || 'Name',
     setTimezone,
     setTheme,
     setDisplayName,
+    setFirstName,
+    setLastName,
     isLoading,
     userProfile,
   };

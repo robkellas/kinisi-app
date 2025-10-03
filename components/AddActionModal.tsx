@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { generateClient } from "aws-amplify/data";
 import { Amplify } from "aws-amplify";
 import outputs from "@/amplify_outputs.json";
@@ -13,14 +14,14 @@ Amplify.configure(outputs);
 type Action = Schema["Action"]["type"];
 
 interface AddActionModalProps {
+  isOpen: boolean;
   onClose: () => void;
   onAdd?: (actionData: any) => void; // Made optional since we handle API calls internally
   onDelete?: (actionId: string) => void; // Add delete callback
   editingAction?: Action | null;
 }
 
-export default function AddActionModal({ onClose, onAdd, onDelete, editingAction }: AddActionModalProps) {
-  console.log('AddActionModal rendered:', { editingAction: !!editingAction, onClose: !!onClose });
+export default function AddActionModal({ isOpen, onClose, onAdd, onDelete, editingAction }: AddActionModalProps) {
   const client = generateClient<Schema>();
   const [formData, setFormData] = useState({
     name: editingAction?.name || '',
@@ -103,8 +104,23 @@ export default function AddActionModal({ onClose, onAdd, onDelete, editingAction
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" style={{ top: 0, left: 0, right: 0, bottom: 0 }}>
-      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-md w-full p-6">
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div 
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" 
+          style={{ top: 0, left: 0, right: 0, bottom: 0 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+        <motion.div 
+          className="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-md w-full p-6"
+          initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.9, y: 20 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+        >
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             {editingAction ? 'Edit Action' : 'Add New Action'}
@@ -342,16 +358,18 @@ export default function AddActionModal({ onClose, onAdd, onDelete, editingAction
             </div>
           </div>
         </form>
-      </div>
+        </motion.div>
 
-      {/* Delete Confirmation Modal */}
-      <DeleteConfirmationModal
-        isOpen={showDeleteConfirm}
-        onClose={() => setShowDeleteConfirm(false)}
-        onConfirm={handleConfirmDelete}
-        actionName={editingAction?.name || ''}
-        isDeleting={isDeleting}
-      />
-    </div>
+        {/* Delete Confirmation Modal */}
+        <DeleteConfirmationModal
+          isOpen={showDeleteConfirm}
+          onClose={() => setShowDeleteConfirm(false)}
+          onConfirm={handleConfirmDelete}
+          actionName={editingAction?.name || ''}
+          isDeleting={isDeleting}
+        />
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

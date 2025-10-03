@@ -1,11 +1,17 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Noto_Sans } from "next/font/google";
 import "./globals.css";
 import { UserProfileProvider } from "@/components/UserProfileContext";
 import { SoundProvider } from "@/components/SoundContext";
 import { ThemeProvider } from "@/components/ThemeContext";
+import { SavingIndicatorProvider } from "@/components/SavingIndicatorContext";
 
-const inter = Inter({ subsets: ["latin"] });
+const notoSans = Noto_Sans({ 
+  subsets: ["latin"],
+  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
+  style: ["normal", "italic"],
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Kinisi: Mindful Movement",
@@ -33,6 +39,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:ital,wght@0,100..900;1,100..900&family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -54,11 +63,13 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={`${inter.className} antialiased bg-gray-50 dark:bg-gray-900`}>
+      <body className={`${notoSans.className} antialiased bg-gray-50 dark:bg-gray-900`}>
         <ThemeProvider>
           <UserProfileProvider>
             <SoundProvider>
-              {children}
+              <SavingIndicatorProvider>
+                {children}
+              </SavingIndicatorProvider>
             </SoundProvider>
           </UserProfileProvider>
         </ThemeProvider>

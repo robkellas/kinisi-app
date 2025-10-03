@@ -10,7 +10,6 @@ import AddActionModal from './AddActionModal';
 import HistoryModal from './HistoryModal';
 import ActionItem from './ActionItem';
 import FlippableScoreChart from './FlippableScoreChart';
-import SettingsModal from './SettingsModal';
 import { useSound } from './SoundContext';
 import { ANIMATION_CLASSES } from '@/lib/animations';
 import { getTodayInTimezone, getDateInTimezone, getYesterdayInTimezone } from '@/lib/dateUtils';
@@ -45,6 +44,7 @@ export default function DailyActionTracker({
   user,
   onSignOut
 }: DailyActionTrackerProps) {
+  const { firstName } = useUserProfile();
   // Don't render anything if user is not authenticated
   if (!user) {
     return (
@@ -95,8 +95,6 @@ export default function DailyActionTracker({
   
   const [showFilters, setShowFilters] = useState(false);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showProfileDrawer, setShowProfileDrawer] = useState(false);
   
   // Filter state
   const [activeFilters, setActiveFilters] = useState(() => {
@@ -222,31 +220,18 @@ export default function DailyActionTracker({
 
   // Update action count
   const updateActionCount = async (actionId: string, increment: boolean) => {
-    console.log('updateActionCount called:', { actionId, increment, updatingActions: Array.from(updatingActions), user: !!user });
+    if (!user) return;
     
-    if (!user) {
-      console.log('User not authenticated, skipping update');
-      return;
-    }
-    
-    if (updatingActions.has(actionId)) {
-      console.log('Action already updating, skipping:', actionId);
-      return;
-    }
+    if (updatingActions.has(actionId)) return;
     
     const action = actions.find(a => a.id === actionId);
-    if (!action) {
-      console.log('Action not found:', actionId);
-      return;
-    }
+    if (!action) return;
     
-    console.log('Starting update for action:', action);
     setUpdatingActions(prev => new Set(prev).add(actionId));
     
     try {
       // Always use selectedDate for consistency
       const currentDate = selectedDate;
-      console.log('Using selectedDate for update:', currentDate);
       const currentLogs = logsCache[currentDate] || [];
       const existingLog = currentLogs.find(l => l.actionId === actionId);
       
@@ -257,7 +242,6 @@ export default function DailyActionTracker({
         newCount = Math.max(0, newCount - 1);
       }
       
-      console.log('Updating action count:', { actionId, currentDate, newCount, increment });
       
       // Set animation trigger BEFORE updating cache to prevent flash
       if (increment && newCount >= (action.targetCount || 0)) {
@@ -362,7 +346,6 @@ export default function DailyActionTracker({
         playDecrementSound(); // Play decrement sound
       }
       
-      console.log('Action count updated successfully');
       
     } catch (error: unknown) {
       console.error('Failed to update action count:', error);
@@ -576,7 +559,6 @@ export default function DailyActionTracker({
     if (!user || hasLoadedWeeklyData) return;
     
     try {
-      console.log('Loading weekly data for past 8 days (first time)');
       setHasLoadedWeeklyData(true);
       
       // Get the last 8 days (7 days + today) to match WeeklyChart needs
@@ -600,7 +582,6 @@ export default function DailyActionTracker({
         }
       });
       
-      console.log('Loaded weekly data:', logsByDate);
       
       // Update logs cache with all weekly data
       setLogsCache(prev => ({
@@ -661,7 +642,6 @@ export default function DailyActionTracker({
     const today = getTodayInTimezone(timezone);
     const currentDate = selectedDate;
     
-    console.log('Calculating score summary for date:', currentDate, 'but todayScore from:', today);
     
     // Get logs for the currently selected date (for action counts)
     const logsForDate = logsCache[currentDate] || [];
@@ -675,13 +655,6 @@ export default function DailyActionTracker({
     const yesterdayLogs = logsCache[yesterdayDate] || [];
     const yesterdayScore = yesterdayLogs.reduce((sum, log) => sum + (log.points || 0), 0);
     
-    console.log('Score summary data:', { 
-      currentDate, 
-      today, 
-      todayScore, 
-      yesterdayScore,
-      logsCount: logsForDate.length 
-    });
     
     // Count completed actions for the currently selected date
     const encourageCompleted = actions.filter(action => {
@@ -722,7 +695,6 @@ export default function DailyActionTracker({
               </p>
               <button
                 onClick={() => {
-                  console.log('Create Your First Action button clicked');
                   setShowAddModal(true);
                 }}
                 className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white dark:text-gray-100 dark:bg-indigo-700 dark:hover:bg-indigo-600 font-medium rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer"
@@ -737,11 +709,10 @@ export default function DailyActionTracker({
         </div>
 
         {/* Add Action Modal */}
-        {showAddModal && (
-          <AddActionModal
-            onClose={() => setShowAddModal(false)}
-          />
-        )}
+        <AddActionModal
+          isOpen={showAddModal}
+          onClose={() => setShowAddModal(false)}
+        />
       </>
     );
   }
@@ -767,7 +738,7 @@ export default function DailyActionTracker({
       {/* Actions List */}
       <div className="p-0">
         {/* Day Navigation */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between">
           {/* Day Picker - Connected Button Group */}
           <div className="flex items-center w-40">
             {/* Previous Day Button */}
@@ -957,7 +928,7 @@ export default function DailyActionTracker({
                   </div>
         )}
 
-        <div className="space-y-3">
+        <div className="space-y-3 py-4">
           {filteredActions.map((action, index) => {
             const count = getActionCount(action.id);
             const isEncourage = action.type === 'ENCOURAGE';
@@ -994,38 +965,36 @@ export default function DailyActionTracker({
       </div>
 
       {/* Add Action Modal */}
-      {showAddModal && (
-        <AddActionModal
-          onClose={() => setShowAddModal(false)}
-        />
-      )}
+      <AddActionModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+      />
 
       {/* Edit Action Modal */}
-      {editingAction && (
-        <AddActionModal
-          onClose={() => {
-            setEditingAction(null);
-            // Ensure card is flipped back to front side
-            setFlippedCards(prev => {
-              const newSet = new Set(prev);
-              newSet.delete(editingAction.id);
-              return newSet;
-            });
-          }}
-          onAdd={(actionData) => {
-            // Handle edit action here
-            setEditingAction(null);
-            // Ensure card is flipped back to front side after successful edit
-            setFlippedCards(prev => {
-              const newSet = new Set(prev);
-              newSet.delete(editingAction.id);
-              return newSet;
-            });
-          }}
-          onDelete={handleDeleteAction}
-          editingAction={editingAction}
-        />
-      )}
+      <AddActionModal
+        isOpen={!!editingAction}
+        onClose={() => {
+          setEditingAction(null);
+          // Ensure card is flipped back to front side
+          setFlippedCards(prev => {
+            const newSet = new Set(prev);
+            if (editingAction) newSet.delete(editingAction.id);
+            return newSet;
+          });
+        }}
+        onAdd={(actionData) => {
+          // Handle edit action here
+          setEditingAction(null);
+          // Ensure card is flipped back to front side after successful edit
+          setFlippedCards(prev => {
+            const newSet = new Set(prev);
+            if (editingAction) newSet.delete(editingAction.id);
+            return newSet;
+          });
+        }}
+        onDelete={handleDeleteAction}
+        editingAction={editingAction}
+      />
 
         {/* History Modal */}
         {historyAction && (
@@ -1044,139 +1013,6 @@ export default function DailyActionTracker({
         )}
 
       </div>
-
-      {/* Mobile Bottom Navigation */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 z-50">
-        <div className="flex items-center justify-around py-2 px-4">
-          {/* Dashboard */}
-          <button className="flex flex-col items-center gap-1 p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v6H8V5z" />
-            </svg>
-            <span className="text-xs font-medium">Dashboard</span>
-          </button>
-
-          {/* Analytics */}
-          <button className="flex flex-col items-center gap-1 p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            <span className="text-xs font-medium">Analytics</span>
-          </button>
-
-          {/* Add Action - Primary Button */}
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex flex-col items-center gap-1 p-3 bg-gradient-to-t from-amber-400 to-yellow-300 hover:from-amber-500 hover:to-yellow-400 text-white rounded-full shadow-lg transition-all duration-200"
-          >
-            <svg className="w-6 h-6 text-gray-900 dark:text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
-
-          {/* Settings */}
-          <button 
-            onClick={() => setShowSettings(true)}
-            className="flex flex-col items-center gap-1 p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
-            </svg>
-            <span className="text-xs font-medium">Settings</span>
-          </button>
-
-          {/* Profile */}
-          <button 
-            onClick={() => setShowProfileDrawer(true)}
-            className="flex flex-col items-center gap-1 p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
-          >
-            <div className="w-5 h-5 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center">
-              <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                {user?.username?.charAt(0).toUpperCase() || 'U'}
-              </span>
-            </div>
-            <span className="text-xs font-medium">Profile</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Settings Modal */}
-      {showSettings && (
-        <SettingsModal 
-          isOpen={showSettings} 
-          onClose={() => setShowSettings(false)} 
-        />
-      )}
-
-      {/* Profile Bottom Drawer */}
-      {showProfileDrawer && (
-        <div className="lg:hidden fixed inset-0 z-50">
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0 bg-black bg-opacity-50"
-            onClick={() => setShowProfileDrawer(false)}
-          />
-          
-          {/* Drawer */}
-          <div className="absolute bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl shadow-2xl transform transition-transform duration-300 ease-out">
-            {/* Handle */}
-            <div className="flex justify-center pt-3 pb-2">
-              <div className="w-12 h-1 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
-            </div>
-            
-            {/* Content */}
-            <div className="p-6">
-              {/* Header */}
-              <div className="flex items-center gap-4 mb-6">
-                <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center">
-                  <span className="text-2xl font-bold text-amber-600 dark:text-amber-400">
-                    {user?.username?.charAt(0).toUpperCase() || 'U'}
-                  </span>
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                    {user?.username || 'User'}
-                  </h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Free Plan</p>
-                </div>
-              </div>
-              
-              {/* Actions */}
-              <div className="space-y-3">
-                <button className="w-full flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
-                  <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                  <span className="text-gray-900 dark:text-white font-medium">Edit Profile</span>
-                </button>
-                
-                <button className="w-full flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
-                  <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="text-gray-900 dark:text-white font-medium">Upgrade Plan</span>
-                </button>
-                
-                {onSignOut && (
-                  <button 
-                    onClick={() => {
-                      setShowProfileDrawer(false);
-                      onSignOut();
-                    }}
-                    className="w-full flex items-center gap-3 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-                  >
-                    <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                    <span className="text-red-600 dark:text-red-400 font-medium">Sign Out</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      </>
+    </>
     );
   }
