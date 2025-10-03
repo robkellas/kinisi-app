@@ -55,6 +55,10 @@ const schema = a.schema({
 
   UserProfile: a
     .model({
+      // User information
+      firstName: a.string().required(),
+      lastName: a.string().required(),
+      
       // User preferences
       timezone: a.string().default('America/Los_Angeles'),
       theme: a.enum(['light', 'dark', 'auto']),

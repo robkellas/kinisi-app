@@ -197,7 +197,7 @@ export default function FlippableScoreChart({
             </div>
 
             {/* Desktop: Two column layout */}
-            <div className="hidden lg:grid grid-cols-[auto_1fr] gap-6">
+            <div className="hidden lg:grid gap-6">
               {/* Left Column - Main Score Display */}
               <div className="flex flex-col justify-start">
                 <div className="flex items-baseline gap-2">

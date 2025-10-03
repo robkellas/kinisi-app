@@ -85,7 +85,7 @@ export default function ActionItem({
       >
         {/* Front Side - Action Item */}
         <div
-          className={`absolute inset-0 rounded-lg cursor-pointer border-2 ${
+          className={`absolute inset-0 rounded-lg cursor-pointer ${
             isEncourage 
               ? 'bg-indigo-600 border-indigo-600' 
               : 'bg-purple-600 border-purple-600'
@@ -96,7 +96,7 @@ export default function ActionItem({
           }}
         >
           {/* Inner content area with gray background and rounded corners */}
-          <div className="absolute inset-y-0 left-[1rem] right-0 bg-gray-100 dark:bg-gray-700 rounded-lg flex gap-3 items-center px-[1rem] py-3">
+          <div className="absolute inset-y-0 left-[1rem] right-0 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-800 rounded-r-lg flex gap-3 items-center px-[1rem] py-3">
             <div className="flex-1">
               <div className="font-semibold text-gray-900 dark:text-white leading-none">
                 {action.type === 'AVOID' && (
@@ -121,7 +121,7 @@ export default function ActionItem({
               <div className="relative">
                 {/* Progress Ring Background */}
                 <motion.div
-                  className="absolute inset-0 w-16 h-16 rounded-full"
+                  className="absolute inset-0 w-14 h-14 rounded-full"
                     style={{
                       background: animateCompletion
                         ? `conic-gradient(from 0deg, rgb(251 191 36) 0deg, rgb(251 191 36) ${(previousProgressPercentage / 100) * 360}deg, ${grayColor} ${(previousProgressPercentage / 100) * 360}deg, ${grayColor} 360deg)`
@@ -159,7 +159,7 @@ export default function ActionItem({
                     onUpdateCount(true);
                   }}
                   disabled={isUpdating}
-                    className={`w-16 h-16 rounded-full flex items-center justify-center relative z-20 ${
+                    className={`w-14 h-14 rounded-full flex items-center justify-center relative z-20 ${
                       isComplete 
                         ? 'text-gray-800 shadow-lg' 
                         : 'text-gray-700 dark:text-white'
@@ -230,7 +230,7 @@ export default function ActionItem({
 
         {/* Back Side - Management Options */}
         <div
-          className={`absolute inset-0 rounded-lg cursor-pointer border-2 ${
+          className={`absolute inset-0 rounded-lg cursor-pointer ${
             isEncourage 
               ? 'bg-indigo-600 border-indigo-600' 
               : 'bg-purple-600 border-purple-600'
